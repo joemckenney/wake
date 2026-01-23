@@ -1,10 +1,8 @@
-<h1 align="center">
-  <br>
-  <code>╲ ╱</code>
-  <br>
-  wake
-  <br>
-</h1>
+<p align="center">
+  <img src="assets/logo.svg" alt="wake" width="120" height="120">
+</p>
+
+<h1 align="center">wake</h1>
 
 <p align="center">
   <strong>The trail you leave behind.</strong>
