@@ -1,6 +1,13 @@
-# wake
+<p align="center">
+  <pre align="center">
+    ╲     ╱
+     ╲   ╱
+      ╲ ╱
+       V
 
-**The trail you leave behind.**
+     wake</pre>
+  <strong>The trail you leave behind.</strong>
+</p>
 
 Every terminal command leaves a trace. Wake captures that trail—commands, outputs, directories, git context—so when you need to retrace your steps or bring an AI assistant up to speed, the context is already there.
 
