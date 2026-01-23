@@ -1,11 +1,12 @@
-<p align="center">
-  <pre align="center">
-    ╲     ╱
-     ╲   ╱
-      ╲ ╱
-       V
+<h1 align="center">
+  <br>
+  <code>╲ ╱</code>
+  <br>
+  wake
+  <br>
+</h1>
 
-     wake</pre>
+<p align="center">
   <strong>The trail you leave behind.</strong>
 </p>
 
