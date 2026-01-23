@@ -22,16 +22,10 @@ Add to `~/.zshrc` or `~/.bashrc`:
 eval "$(wake init zsh)"   # or: wake init bash
 ```
 
-Add to `~/.config/claude-code/mcp.json`:
+Add the MCP server to Claude Code:
 
-```json
-{
-  "mcpServers": {
-    "wake": {
-      "command": "wake-mcp"
-    }
-  }
-}
+```sh
+claude mcp add --transport stdio --scope user wake-mcp -- wake-mcp
 ```
 
 ## Usage
