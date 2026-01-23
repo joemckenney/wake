@@ -1,12 +1,8 @@
-<p align="center">
-  <img src="assets/logo.svg" alt="wake" width="120" height="120">
-</p>
+<img src="assets/logo.svg" alt="wake" width="80" height="80">
 
-<h1 align="center">wake</h1>
+# wake
 
-<p align="center">
-  <strong>The trail you leave behind.</strong>
-</p>
+**The trail you leave behind.**
 
 Every terminal command leaves a trace. Wake captures that trail—commands, outputs, directories, git context—so when you need to retrace your steps or bring an AI assistant up to speed, the context is already there.
 
