@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
 
@@ -39,7 +40,6 @@ jobs:
       - name: Run tests
         run: cargo test --all
 
-  # Build for multiple platforms
   build:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -62,3 +62,38 @@ jobs:
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package
+        shell: bash
+        run: |
+          staging="wake-${{ github.ref_name }}-${{ matrix.target }}"
+          mkdir -p "$staging"
+          cp target/${{ matrix.target }}/release/wake "$staging/"
+          cp target/${{ matrix.target }}/release/wake-mcp "$staging/"
+          tar czf "$staging.tar.gz" "$staging"
+          echo "ASSET=$staging.tar.gz" >> $GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wake-${{ matrix.target }}
+          path: ${{ env.ASSET }}
+
+  release:
+    needs: [test, build]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.tar.gz
+          generate_release_notes: true
