@@ -38,12 +38,35 @@ Now Claude can query your terminal history directly—ask _"What did I just run?
 
 ## Usage
 
+### The Workflow
+
+1. **Start a recorded session** — `wake shell`
+2. **Work in your terminal** — run builds, debug issues, whatever
+3. **Something happens** — a deploy fails, tests break, you forget where you left off
+4. **Ask Claude Code** — it queries your terminal history via MCP, no copy-pasting
+
+### Example
+
+```
+$ wake shell
+$ kubectl logs deploy/api-server | tail -100
+# wall of errors
+$ kubectl describe pod api-server-7f8b9
+# more stuff you don't have time to read
+```
+
+> **You:** Summarize what's happening with the API server
+>
+> **Claude:** The API server is crash-looping. From the logs, it's failing to connect to Redis on startup—connection refused to `redis:6379`. The pod events show 5 restarts in the last 10 minutes. Looks like the Redis service might be down.
+
+### CLI Reference
+
 ```sh
 wake shell              # Start recorded session
 wake log                # Recent commands
 wake search "error"     # Search history
-wake dump               # Export as markdown
-wake annotate "note"    # Add a breadcrumb
+wake dump               # Export session as markdown
+wake annotate "note"    # Add a breadcrumb for context
 ```
 
 ## How It Works
