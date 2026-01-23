@@ -41,9 +41,9 @@ claude mcp add --transport stdio --scope user wake-mcp -- wake-mcp
 ```
 $ wake shell
 $ kubectl logs deploy/api-server | tail -100
-# wall of errors
+  # wall of errors
 $ kubectl describe pod api-server-7f8b9
-# more stuff you don't have time to read
+  # more stuff you don't have time to read
 ```
 
 > **You:** Summarize what's happening with the API server
