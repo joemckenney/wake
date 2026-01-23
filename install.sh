@@ -105,15 +105,20 @@ main() {
     info "Extracting..."
     tar -xzf "${tmp_dir}/${archive_name}" -C "$tmp_dir"
 
+    # Find extracted directory
+    extract_dir="${tmp_dir}/wake-${version}-${target}"
+
     # Create install directory
     mkdir -p "$INSTALL_DIR"
 
     # Install binaries
     for bin in wake wake-mcp; do
-        if [ -f "${tmp_dir}/${bin}" ]; then
-            mv "${tmp_dir}/${bin}" "${INSTALL_DIR}/${bin}"
+        if [ -f "${extract_dir}/${bin}" ]; then
+            mv "${extract_dir}/${bin}" "${INSTALL_DIR}/${bin}"
             chmod +x "${INSTALL_DIR}/${bin}"
             info "Installed ${bin} to ${INSTALL_DIR}/${bin}"
+        else
+            warn "Binary ${bin} not found in release"
         fi
     done
 
