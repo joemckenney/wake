@@ -1,0 +1,17 @@
+[package]
+name = "wake-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core library for Wake - terminal session capture and storage"
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rusqlite.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+strip-ansi-escapes.workspace = true
+dirs.workspace = true
+thiserror.workspace = true

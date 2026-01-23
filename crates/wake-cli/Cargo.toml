@@ -1,0 +1,29 @@
+[package]
+name = "wake-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "CLI for Wake - development context recorder"
+
+[[bin]]
+name = "wake"
+path = "src/main.rs"
+
+[dependencies]
+wake-core.workspace = true
+tokio.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+portable-pty.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+signal-hook.workspace = true
+signal-hook-tokio.workspace = true
+anyhow.workspace = true
+term_size.workspace = true
+libc.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+rusqlite = { workspace = true }

@@ -1,0 +1,16 @@
+[package]
+name = "wake-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "MCP server for Wake - Claude Code integration"
+
+[[bin]]
+name = "wake-mcp"
+path = "src/main.rs"
+
+[dependencies]
+wake-core.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true

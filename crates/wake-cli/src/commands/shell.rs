@@ -1,0 +1,292 @@
+use anyhow::{Context, Result};
+use chrono::Utc;
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use std::io::{Read, Write};
+use std::os::unix::net::UnixListener;
+use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc;
+use wake_core::{Database, GitCache, HookMessage, OutputBuffer};
+
+struct PendingCommand {
+    id: i64,
+    started_at: chrono::DateTime<Utc>,
+    buffer: OutputBuffer,
+}
+
+struct SessionState {
+    session_id: String,
+    db: Database,
+    git_cache: GitCache,
+    current_command: Option<PendingCommand>,
+}
+
+pub async fn run() -> Result<()> {
+    let session_id = uuid::Uuid::new_v4().to_string();
+    let socket_path = format!("/tmp/wake-{session_id}.sock");
+
+    // Clean up any stale socket
+    let _ = std::fs::remove_file(&socket_path);
+
+    // Get user's shell
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+
+    // Detect project root
+    let cwd = std::env::current_dir().ok();
+    let mut git_cache = GitCache::new();
+    let project_root =
+        cwd.as_ref().and_then(|p| git_cache.get(p).root).map(|p| p.to_string_lossy().to_string());
+
+    // Initialize database and create session
+    let db = Database::open().context("Failed to open database")?;
+    db.create_session(&session_id, Some(&shell), project_root.as_deref(), None)
+        .context("Failed to create session")?;
+
+    // Create PTY
+    let pty_system = native_pty_system();
+    let pty_pair = pty_system
+        .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+        .context("Failed to open PTY")?;
+
+    // Build command with environment variables
+    let mut cmd = CommandBuilder::new(&shell);
+    cmd.env("WAKE_SESSION", &session_id);
+    cmd.env("WAKE_SOCKET", &socket_path);
+    if let Some(cwd) = &cwd {
+        cmd.cwd(cwd);
+    }
+
+    // Spawn child process
+    let mut child = pty_pair.slave.spawn_command(cmd).context("Failed to spawn shell")?;
+
+    // Get PTY master for I/O
+    let master = pty_pair.master;
+    let mut reader = master.try_clone_reader().context("Failed to clone PTY reader")?;
+    let mut writer = master.take_writer().context("Failed to take PTY writer")?;
+
+    // Set up terminal raw mode (only if stdin is a TTY)
+    let _raw_guard = RawModeGuard::new();
+
+    // Resize PTY to match terminal
+    if let Some((cols, rows)) = term_size::dimensions() {
+        let _ = master.resize(PtySize {
+            rows: rows as u16,
+            cols: cols as u16,
+            pixel_width: 0,
+            pixel_height: 0,
+        });
+    }
+
+    // Create Unix socket for hooks
+    let listener = UnixListener::bind(&socket_path).context("Failed to bind Unix socket")?;
+    listener.set_nonblocking(true).context("Failed to set socket non-blocking")?;
+
+    // Shared state
+    let state = Arc::new(Mutex::new(SessionState {
+        session_id: session_id.clone(),
+        db,
+        git_cache,
+        current_command: None,
+    }));
+
+    // Channel for coordinating shutdown
+    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
+
+    // Spawn thread to handle stdin -> PTY
+    let _stdin_handle = {
+        let shutdown_tx = shutdown_tx.clone();
+        std::thread::spawn(move || {
+            let mut stdin = std::io::stdin();
+            let mut buf = [0u8; 1024];
+            loop {
+                match stdin.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if writer.write_all(&buf[..n]).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            let _ = shutdown_tx.blocking_send(());
+        })
+    };
+
+    // Spawn thread to handle PTY -> stdout (and buffer output)
+    let _pty_handle = {
+        let state = Arc::clone(&state);
+        let shutdown_tx = shutdown_tx.clone();
+        std::thread::spawn(move || {
+            let mut stdout = std::io::stdout();
+            let mut buf = [0u8; 4096];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let data = &buf[..n];
+                        // Write to stdout
+                        if stdout.write_all(data).is_err() {
+                            break;
+                        }
+                        let _ = stdout.flush();
+
+                        // Buffer for current command
+                        if let Ok(mut state) = state.lock() {
+                            if let Some(ref mut pending) = state.current_command {
+                                pending.buffer.append(data);
+                            }
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            let _ = shutdown_tx.blocking_send(());
+        })
+    };
+
+    // Handle socket connections in a separate thread
+    let _socket_thread = {
+        let state = Arc::clone(&state);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(mut stream) => {
+                        let mut buf = String::new();
+                        if stream.read_to_string(&mut buf).is_ok() {
+                            if let Ok(msg) = serde_json::from_str::<HookMessage>(&buf) {
+                                handle_hook_message(&state, msg);
+                            }
+                        }
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    Err(_) => break,
+                }
+            }
+        })
+    };
+
+    // Wait for child to exit
+    let exit_status = child.wait()?;
+    drop(shutdown_tx);
+
+    // Wait for shutdown signal
+    let _ = shutdown_rx.recv().await;
+
+    // Finalize any pending command
+    {
+        let mut state = state.lock().unwrap();
+        if let Some(pending) = state.current_command.take() {
+            let output_result = pending.buffer.finish();
+            let duration_ms = (Utc::now() - pending.started_at).num_milliseconds();
+            let _ = state.db.finish_command(
+                pending.id,
+                exit_status.exit_code() as i32,
+                duration_ms,
+                &output_result.clean,
+                &output_result.raw,
+                output_result.truncated,
+            );
+        }
+        let _ = state.db.end_session(&state.session_id);
+    }
+
+    // Cleanup
+    let _ = std::fs::remove_file(&socket_path);
+
+    std::process::exit(exit_status.exit_code() as i32);
+}
+
+fn handle_hook_message(state: &Arc<Mutex<SessionState>>, msg: HookMessage) {
+    let mut state = match state.lock() {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    match msg {
+        HookMessage::CmdStart { cmd, cwd, timestamp } => {
+            // Finalize any previous command that wasn't properly ended
+            if let Some(pending) = state.current_command.take() {
+                let output_result = pending.buffer.finish();
+                let duration_ms = (Utc::now() - pending.started_at).num_milliseconds();
+                let _ = state.db.finish_command(
+                    pending.id,
+                    -1, // Unknown exit code
+                    duration_ms,
+                    &output_result.clean,
+                    &output_result.raw,
+                    output_result.truncated,
+                );
+            }
+
+            // Get git info for this directory
+            let git_info = state.git_cache.get(&cwd);
+
+            // Insert new command
+            let cmd_id = state.db.insert_command(
+                &state.session_id,
+                &cmd,
+                Some(cwd.to_string_lossy().as_ref()),
+                git_info.branch.as_deref(),
+            );
+
+            if let Ok(id) = cmd_id {
+                state.current_command =
+                    Some(PendingCommand { id, started_at: timestamp, buffer: OutputBuffer::new() });
+            }
+        }
+        HookMessage::CmdEnd { exit_code, duration_ms, timestamp: _ } => {
+            if let Some(pending) = state.current_command.take() {
+                let output_result = pending.buffer.finish();
+                let _ = state.db.finish_command(
+                    pending.id,
+                    exit_code,
+                    duration_ms as i64,
+                    &output_result.clean,
+                    &output_result.raw,
+                    output_result.truncated,
+                );
+            }
+        }
+    }
+}
+
+struct RawModeGuard {
+    original: Option<libc::termios>,
+}
+
+impl RawModeGuard {
+    fn new() -> Self {
+        unsafe {
+            // Check if stdin is a TTY
+            if libc::isatty(libc::STDIN_FILENO) == 0 {
+                return Self { original: None };
+            }
+
+            let mut original: libc::termios = std::mem::zeroed();
+            if libc::tcgetattr(libc::STDIN_FILENO, &mut original) != 0 {
+                return Self { original: None };
+            }
+
+            let mut raw = original;
+            libc::cfmakeraw(&mut raw);
+
+            if libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &raw) != 0 {
+                return Self { original: None };
+            }
+
+            Self { original: Some(original) }
+        }
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        if let Some(ref original) = self.original {
+            unsafe {
+                libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, original);
+            }
+        }
+    }
+}
