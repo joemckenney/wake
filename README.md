@@ -34,7 +34,7 @@ Add to `~/.config/claude-code/mcp.json`:
 }
 ```
 
-Now Claude can query your terminal history directly—ask *"What did I just run?"* or *"Why did my build fail?"*
+Now Claude can query your terminal history directly—ask _"What did I just run?"_ or _"Why did my build fail?"_
 
 ## Usage
 
@@ -49,44 +49,44 @@ wake annotate "note"    # Add a breadcrumb
 ## How It Works
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                            wake shell                                │
-│                                                                      │
-│  ┌───────────┐       ┌─────────────┐       ┌──────────────────────┐ │
-│  │   Your    │  pty  │    Shell    │ hook  │    Unix Socket       │ │
-│  │  Terminal │◄─────►│  (zsh/bash) │──────►│  /tmp/wake-*.sock    │ │
-│  └───────────┘       └─────────────┘       └──────────┬───────────┘ │
-│        │                   │                          │             │
-│        │                   │ stdout                   │ cmd events  │
-│        │                   ▼                          ▼             │
-│        │             ┌─────────────────────────────────┐            │
-│        │             │) )        Output Buffer         │            │
-│        │             └─────────────┬───────────────────┘            │
-│        │                           │                                │
-│        │                           ▼                                │
-│        │                    ┌─────────────┐                         │
-│        │                    │  SQLite DB  │                         │
-│        │                    │  ~/.wake/   │                         │
-│        │                    └──────┬──────┘                         │
-└────────┼───────────────────────────┼────────────────────────────────┘
-         │                           │
-         │ you                       │ reads
-         ▼                           ▼
-┌──────────────┐            ┌──────────────┐          ┌─────────────┐
-│   Human at   │            │   wake-mcp   │   mcp    │ Claude Code │
-│   Keyboard   │            │  MCP Server  │◄────────►│             │
-└──────────────┘            └──────────────┘          └─────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                            wake shell                               │
+│                                                                     │
+│  ┌───────────┐       ┌─────────────┐      ┌──────────────────────┐  │
+│  │   Your    │  pty  │    Shell    │ hook │    Unix Socket       │  │
+│  │  Terminal │◄─────►│  (zsh/bash) │─────►│  /tmp/wake-*.sock    │  │
+│  └───────────┘       └─────────────┘      └──────────┬───────────┘  │
+│        │                   │                         │              │
+│        │                   │ stdout                  │ cmd events   │
+│        │                   ▼                         ▼              │
+│        │              ┌────────────────────────────────┐            │
+│        │              │         Output Buffer          │            │
+│        │              └───────────────┬────────────────┘            │
+│        │                              │                             │
+│        │                              ▼                             │
+│        │                       ┌─────────────┐                      │
+│        │                       │  SQLite DB  │                      │
+│        │                       │  ~/.wake/   │                      │
+│        │                       └─────────────┘                      │
+└────────┼────────────────────────────────────────────────────────────┘
+         │                              ▲
+         │ you                          │ reads
+         ▼                              │
+┌──────────────┐               ┌──────────────┐          ┌───────────┐
+│   Human at   │               │   wake-mcp   │   mcp    │  Claude   │
+│   Keyboard   │               │  MCP Server  │◄────────►│   Code    │
+└──────────────┘               └──────────────┘          └───────────┘
 ```
 
 ### Components
 
-| Component | Purpose |
-|-----------|---------|
-| `wake shell` | Spawns a PTY, captures all I/O, listens for hook events |
-| Shell hooks | Installed via `wake init`, notify wake when commands start/end |
-| Unix socket | IPC between shell hooks and the wake process |
-| SQLite DB | Stores sessions, commands, outputs, annotations |
-| `wake-mcp` | MCP server that exposes wake data to Claude Code |
+| Component    | Purpose                                                        |
+| ------------ | -------------------------------------------------------------- |
+| `wake shell` | Spawns a PTY, captures all I/O, listens for hook events        |
+| Shell hooks  | Installed via `wake init`, notify wake when commands start/end |
+| Unix socket  | IPC between shell hooks and the wake process                   |
+| SQLite DB    | Stores sessions, commands, outputs, annotations                |
+| `wake-mcp`   | MCP server that exposes wake data to Claude Code               |
 
 ### Data Flow
 
