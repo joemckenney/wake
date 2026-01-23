@@ -1,13 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
-  <!-- Center point (the boat) -->
-  <circle cx="60" cy="30" r="5" fill="#3b82f6"/>
+  <!-- The boat at top -->
+  <circle cx="60" cy="20" r="5" fill="#3b82f6"/>
 
-  <!-- Inner ripple -->
-  <path d="M44 45 L60 75 L76 45" stroke="#6b7280" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.7"/>
+  <!-- Inner ripple - apex at top, spreading down -->
+  <path d="M48 50 L60 35 L72 50" stroke="#6b7280" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.7"/>
 
   <!-- Middle ripple -->
-  <path d="M32 55 L60 85 L88 55" stroke="#6b7280" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.5"/>
+  <path d="M36 70 L60 50 L84 70" stroke="#6b7280" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.5"/>
 
   <!-- Outer ripple -->
-  <path d="M20 65 L60 95 L100 65" stroke="#6b7280" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.3"/>
+  <path d="M24 90 L60 65 L96 90" stroke="#6b7280" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.3"/>
 </svg>
