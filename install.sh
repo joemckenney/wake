@@ -1,10 +1,10 @@
 #!/bin/sh
-# Wake installer - https://github.com/joe/wake
-# Usage: curl -sSf https://raw.githubusercontent.com/joe/wake/main/install.sh | sh
+# Wake installer - https://github.com/joemckenney/wake
+# Usage: curl -sSf https://raw.githubusercontent.com/joemckenney/wake/main/install.sh | sh
 
 set -e
 
-REPO="joe/wake"
+REPO="joemckenney/wake"
 INSTALL_DIR="${WAKE_INSTALL_DIR:-$HOME/.local/bin}"
 
 # Colors (if terminal supports it)

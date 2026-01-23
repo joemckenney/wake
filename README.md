@@ -22,7 +22,7 @@ Wake runs in the background, recording everything. When you need help, your AI a
 ## Installation
 
 ```sh
-curl -sSf https://raw.githubusercontent.com/joe/wake/main/install.sh | sh
+curl -sSf https://raw.githubusercontent.com/joemckenney/wake/main/install.sh | sh
 ```
 
 Or with Cargo:
@@ -140,7 +140,7 @@ echo ~/.local/share/wake/
 ## Building from Source
 
 ```sh
-git clone https://github.com/joe/wake
+git clone https://github.com/joemckenney/wake
 cd wake
 cargo build --release
 ```
