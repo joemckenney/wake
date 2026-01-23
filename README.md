@@ -29,12 +29,6 @@ Wake runs quietly in the background, preserving everything. When you need to loo
 curl -sSf https://raw.githubusercontent.com/joemckenney/wake/main/install.sh | sh
 ```
 
-Or with Cargo:
-
-```sh
-cargo install wake-cli wake-mcp
-```
-
 ### Shell Setup
 
 Add to your `~/.zshrc` or `~/.bashrc`:
