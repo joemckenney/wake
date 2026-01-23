@@ -1,14 +1,14 @@
 # wake
 
-**Terminal session recorder for AI-assisted development.**
+**The trail you leave behind.**
 
-Wake captures your terminal sessions—commands, outputs, working directories, and git context—making it easy to share rich development context with AI assistants like Claude.
+Every terminal command leaves a trace. Wake captures that trail—commands, outputs, directories, git context—so when you need to retrace your steps or bring an AI assistant up to speed, the context is already there.
 
 ## Why wake?
 
-When working with AI coding assistants, context is everything. But copying terminal output is tedious, and you often forget the exact sequence of commands that led to an error.
+When working with AI coding assistants, context is everything. But by the time you need help, you've already scrolled past the error, forgotten the exact command, or lost track of what you tried.
 
-Wake runs in the background, recording everything. When you need help, your AI assistant can query your terminal history directly—seeing what you ran, where you ran it, and what happened.
+Wake runs quietly in the background, preserving everything. When you need to look back—or bring someone else into the picture—your entire session is there: what you ran, where you ran it, and what happened.
 
 ## Features
 
