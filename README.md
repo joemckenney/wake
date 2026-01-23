@@ -14,13 +14,13 @@ Wake records your terminal sessions—commands, outputs, git context—so Claude
 curl -sSf https://raw.githubusercontent.com/joemckenney/wake/main/install.sh | sh
 ```
 
+## Setup
+
 Add to `~/.zshrc` or `~/.bashrc`:
 
 ```sh
 eval "$(wake init zsh)"   # or: wake init bash
 ```
-
-## Claude Code Setup
 
 Add to `~/.config/claude-code/mcp.json`:
 
@@ -34,16 +34,13 @@ Add to `~/.config/claude-code/mcp.json`:
 }
 ```
 
-Now Claude can query your terminal history directly—ask _"What did I just run?"_ or _"Why did my build fail?"_
-
 ## Usage
 
 ### The Workflow
 
-1. **Start a recorded session** — `wake shell`
-2. **Work in your terminal** — run builds, debug issues, whatever
-3. **Something happens** — a deploy fails, tests break, you forget where you left off
-4. **Ask Claude Code** — it queries your terminal history via MCP, no copy-pasting
+1. **Start** — `wake shell`
+2. **Work** — builds, deploys, debugging
+3. **Ask Claude** — it sees your terminal history, no copy-pasting
 
 ### Example
 
