@@ -48,6 +48,18 @@ enum Commands {
         #[command(subcommand)]
         event: HookEvent,
     },
+    /// Delete old sessions and their data
+    Prune {
+        /// Preview what would be deleted without deleting
+        #[arg(long)]
+        dry_run: bool,
+        /// Skip confirmation prompt
+        #[arg(short, long)]
+        force: bool,
+        /// Override retention period in days (default: from config or 21)
+        #[arg(long, value_name = "DAYS")]
+        older_than: Option<u32>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -84,5 +96,13 @@ async fn main() -> anyhow::Result<()> {
                 commands::hook::cmd_end(exit_code, duration).await
             }
         },
+        Commands::Prune { dry_run, force, older_than } => {
+            commands::prune::run(commands::prune::PruneOptions {
+                dry_run,
+                force,
+                older_than_days: older_than,
+            })
+            .await
+        }
     }
 }

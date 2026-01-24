@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixListener;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
-use wake_core::{Database, GitCache, HookMessage, OutputBuffer};
+use wake_core::{Config, Database, GitCache, HookMessage, OutputBuffer};
 
 struct PendingCommand {
     id: i64,
@@ -38,6 +38,12 @@ pub async fn run() -> Result<()> {
 
     // Initialize database and create session
     let db = Database::open().context("Failed to open database")?;
+
+    // Auto-cleanup old sessions (silent, non-blocking)
+    if let Ok(config) = Config::load() {
+        let _ = db.prune_old_sessions(config.retention.days);
+    }
+
     db.create_session(&session_id, Some(&shell), project_root.as_deref(), None)
         .context("Failed to create session")?;
 
