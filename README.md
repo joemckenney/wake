@@ -70,13 +70,17 @@ Create `~/.wake/config.toml`:
 
 ```toml
 [retention]
-days = 21   # Delete sessions older than this (default: 21)
+days = 21      # Delete sessions older than this (default: 21)
+
+[output]
+max_mb = 5     # Max output size per command in MB (default: 5)
 ```
 
-Or use an environment variable (takes precedence):
+Or use environment variables (take precedence):
 
 ```sh
 export WAKE_RETENTION_DAYS=14
+export WAKE_MAX_OUTPUT_MB=10
 ```
 
 Old sessions are automatically pruned on each `wake shell` start.
@@ -134,7 +138,7 @@ Old sessions are automatically pruned on each `wake shell` start.
 ### Constraints
 
 - **One session per shell** — Each `wake shell` creates an isolated session
-- **Output truncation** — Commands with >100KB output are truncated to prevent bloat
+- **Output truncation** — Commands with >5MB output are truncated (configurable)
 - **Auto-cleanup** — Sessions older than 21 days are automatically deleted (configurable)
 - **Local only** — All data stays in `~/.wake/`, nothing leaves your machine
 - **Shell support** — Hooks work with zsh and bash (fish/other shells not yet supported)
