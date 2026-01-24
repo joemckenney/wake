@@ -115,3 +115,56 @@ fn test_hook_cmd_end_outside_session() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("WAKE_SOCKET not set"));
 }
+
+#[test]
+fn test_prune_help() {
+    let output = wake_cmd().args(["prune", "--help"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("--dry-run"));
+    assert!(stdout.contains("--force"));
+    assert!(stdout.contains("--older-than"));
+}
+
+#[test]
+fn test_prune_dry_run_no_data() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output =
+        wake_cmd().args(["prune", "--dry-run"]).env("HOME", temp_dir.path()).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("No sessions older than"));
+}
+
+#[test]
+fn test_prune_with_force() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let home = temp_dir.path();
+
+    // Create database with old data directly
+    let db_dir = home.join(".wake");
+    std::fs::create_dir_all(&db_dir).unwrap();
+    let conn = rusqlite::Connection::open(db_dir.join("wake.db")).unwrap();
+    conn.execute_batch(include_str!("../../wake-core/src/schema.sql")).unwrap();
+    conn.execute(
+        "INSERT INTO sessions (id, started_at) VALUES ('old', '2020-01-01T00:00:00Z')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO commands (session_id, started_at, command) VALUES ('old', '2020-01-01T00:00:01Z', 'echo test')",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    let output = wake_cmd()
+        .args(["prune", "--force", "--older-than", "30"])
+        .env("HOME", home)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Deleted 1 session"));
+}

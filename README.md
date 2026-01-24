@@ -58,7 +58,28 @@ wake log                # Recent commands
 wake search "error"     # Search history
 wake dump               # Export session as markdown
 wake annotate "note"    # Add a breadcrumb for context
+wake prune              # Delete old sessions
+wake prune --dry-run    # Preview what would be deleted
+wake prune --force      # Skip confirmation
+wake prune --older-than 7  # Override retention period (days)
 ```
+
+### Configuration
+
+Create `~/.wake/config.toml`:
+
+```toml
+[retention]
+days = 21   # Delete sessions older than this (default: 21)
+```
+
+Or use an environment variable (takes precedence):
+
+```sh
+export WAKE_RETENTION_DAYS=14
+```
+
+Old sessions are automatically pruned on each `wake shell` start.
 
 ## How It Works
 
@@ -113,7 +134,8 @@ wake annotate "note"    # Add a breadcrumb for context
 ### Constraints
 
 - **One session per shell** — Each `wake shell` creates an isolated session
-- **Output truncation** — Commands with >1MB output are truncated to prevent bloat
+- **Output truncation** — Commands with >100KB output are truncated to prevent bloat
+- **Auto-cleanup** — Sessions older than 21 days are automatically deleted (configurable)
 - **Local only** — All data stays in `~/.wake/`, nothing leaves your machine
 - **Shell support** — Hooks work with zsh and bash (fish/other shells not yet supported)
 

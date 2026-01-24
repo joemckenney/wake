@@ -268,3 +268,81 @@ exit 0
         "Most recent session should have 1 command.\nGot: {status_stdout}"
     );
 }
+
+/// Test that old sessions are automatically pruned on new session start
+#[test]
+fn test_e2e_auto_prune_on_session_start() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let home = temp_dir.path();
+    let wake = wake_bin();
+
+    // Pre-populate with old session directly in DB
+    let db_dir = home.join(".wake");
+    std::fs::create_dir_all(&db_dir).unwrap();
+    let conn = rusqlite::Connection::open(db_dir.join("wake.db")).unwrap();
+    conn.execute_batch(include_str!("../../wake-core/src/schema.sql")).unwrap();
+    conn.execute(
+        "INSERT INTO sessions (id, started_at, ended_at) VALUES ('ancient', '2020-01-01T00:00:00Z', '2020-01-01T01:00:00Z')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO commands (session_id, started_at, command) VALUES ('ancient', '2020-01-01T00:30:00Z', 'old command')",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    // Create minimal test script
+    let test_script = home.join("test_shell.sh");
+    std::fs::write(
+        &test_script,
+        format!(
+            r#"#!/bin/bash
+"{wake}" __hook cmd-start --cmd "echo new"
+echo new
+"{wake}" __hook cmd-end --exit-code 0 --duration 1
+sleep 0.1
+exit 0
+"#
+        ),
+    )
+    .unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&test_script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    // Run wake shell (should auto-prune with default 21 day retention)
+    let _output = Command::new(&wake)
+        .arg("shell")
+        .env("HOME", home)
+        .env("SHELL", &test_script)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("Failed to run wake shell");
+
+    // Verify old session was pruned
+    let conn = rusqlite::Connection::open(db_dir.join("wake.db")).unwrap();
+
+    let old_exists: bool = conn
+        .query_row("SELECT EXISTS(SELECT 1 FROM sessions WHERE id = 'ancient')", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert!(!old_exists, "Old session should have been pruned");
+
+    // Verify new session exists (should be exactly 1 session now)
+    let session_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0)).unwrap();
+    assert_eq!(session_count, 1, "Should have exactly 1 session (the new one)");
+
+    // Verify old command was also deleted
+    let cmd_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM commands", [], |row| row.get(0)).unwrap();
+    assert_eq!(cmd_count, 1, "Should have exactly 1 command (from new session)");
+}

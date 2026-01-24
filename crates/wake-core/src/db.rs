@@ -46,6 +46,14 @@ pub struct Annotation {
     pub note: String,
 }
 
+/// Statistics about data to be pruned
+#[derive(Debug, Clone, Default)]
+pub struct PruneStats {
+    pub sessions: usize,
+    pub commands: usize,
+    pub annotations: usize,
+}
+
 pub struct Database {
     conn: Connection,
 }
@@ -282,6 +290,68 @@ impl Database {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(annotations)
     }
+
+    // Prune operations
+
+    /// Preview what would be deleted without actually deleting
+    pub fn preview_prune(&self, retention_days: u32) -> Result<PruneStats, DbError> {
+        let cutoff = Utc::now() - chrono::Duration::days(retention_days as i64);
+        let cutoff_str = cutoff.to_rfc3339();
+
+        let sessions: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM sessions WHERE started_at < ?1",
+            params![cutoff_str],
+            |row| row.get(0),
+        )?;
+
+        let commands: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM commands WHERE session_id IN (SELECT id FROM sessions WHERE started_at < ?1)",
+            params![cutoff_str],
+            |row| row.get(0),
+        )?;
+
+        let annotations: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM annotations WHERE session_id IN (SELECT id FROM sessions WHERE started_at < ?1)",
+            params![cutoff_str],
+            |row| row.get(0),
+        )?;
+
+        Ok(PruneStats {
+            sessions: sessions as usize,
+            commands: commands as usize,
+            annotations: annotations as usize,
+        })
+    }
+
+    /// Delete sessions older than retention_days and cascade to commands/annotations
+    pub fn prune_old_sessions(&self, retention_days: u32) -> Result<PruneStats, DbError> {
+        let cutoff = Utc::now() - chrono::Duration::days(retention_days as i64);
+        let cutoff_str = cutoff.to_rfc3339();
+
+        // Get stats first
+        let stats = self.preview_prune(retention_days)?;
+
+        // Delete in order: annotations, commands, sessions (respecting FK relationships)
+        self.conn.execute(
+            "DELETE FROM annotations WHERE session_id IN (SELECT id FROM sessions WHERE started_at < ?1)",
+            params![cutoff_str],
+        )?;
+
+        self.conn.execute(
+            "DELETE FROM commands WHERE session_id IN (SELECT id FROM sessions WHERE started_at < ?1)",
+            params![cutoff_str],
+        )?;
+
+        self.conn.execute("DELETE FROM sessions WHERE started_at < ?1", params![cutoff_str])?;
+
+        Ok(stats)
+    }
+
+    /// Run VACUUM to reclaim disk space after deletion
+    pub fn vacuum(&self) -> Result<(), DbError> {
+        self.conn.execute_batch("VACUUM")?;
+        Ok(())
+    }
 }
 
 fn parse_datetime(s: String) -> DateTime<Utc> {
@@ -434,5 +504,100 @@ mod tests {
 
         let session = db.get_session("does-not-exist").unwrap();
         assert!(session.is_none());
+    }
+
+    #[test]
+    fn test_prune_old_sessions() {
+        let db = temp_db();
+
+        // Create old session (manually set old timestamp)
+        db.conn
+            .execute(
+                "INSERT INTO sessions (id, started_at) VALUES (?1, ?2)",
+                params!["old-session", "2020-01-01T00:00:00Z"],
+            )
+            .unwrap();
+
+        // Create recent session
+        db.create_session("new-session", None, None, None).unwrap();
+
+        // Add commands to both
+        db.conn
+            .execute(
+                "INSERT INTO commands (session_id, started_at, command) VALUES (?1, ?2, ?3)",
+                params!["old-session", "2020-01-01T00:00:01Z", "old cmd"],
+            )
+            .unwrap();
+        db.insert_command("new-session", "new cmd", None, None).unwrap();
+
+        // Prune with 30 day retention
+        let stats = db.prune_old_sessions(30).unwrap();
+
+        assert_eq!(stats.sessions, 1);
+        assert_eq!(stats.commands, 1);
+
+        // Verify old session is gone
+        assert!(db.get_session("old-session").unwrap().is_none());
+
+        // Verify new session remains
+        assert!(db.get_session("new-session").unwrap().is_some());
+    }
+
+    #[test]
+    fn test_preview_prune() {
+        let db = temp_db();
+
+        // Create old session
+        db.conn
+            .execute(
+                "INSERT INTO sessions (id, started_at) VALUES (?1, ?2)",
+                params!["old-session", "2020-01-01T00:00:00Z"],
+            )
+            .unwrap();
+
+        // Preview should show 1 session
+        let stats = db.preview_prune(30).unwrap();
+        assert_eq!(stats.sessions, 1);
+
+        // But session should still exist
+        assert!(db.get_session("old-session").unwrap().is_some());
+    }
+
+    #[test]
+    fn test_prune_cascades_to_annotations() {
+        let db = temp_db();
+
+        // Create old session with annotation
+        db.conn
+            .execute(
+                "INSERT INTO sessions (id, started_at) VALUES (?1, ?2)",
+                params!["old-session", "2020-01-01T00:00:00Z"],
+            )
+            .unwrap();
+        db.insert_annotation("old-session", "old note").unwrap();
+
+        let stats = db.prune_old_sessions(30).unwrap();
+
+        assert_eq!(stats.annotations, 1);
+
+        // Verify annotation is deleted (and session is gone)
+        assert!(db.get_session("old-session").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_prune_nothing_to_delete() {
+        let db = temp_db();
+
+        // Create only recent session
+        db.create_session("new-session", None, None, None).unwrap();
+
+        let stats = db.prune_old_sessions(30).unwrap();
+
+        assert_eq!(stats.sessions, 0);
+        assert_eq!(stats.commands, 0);
+        assert_eq!(stats.annotations, 0);
+
+        // Session should still exist
+        assert!(db.get_session("new-session").unwrap().is_some());
     }
 }
