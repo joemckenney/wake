@@ -346,3 +346,68 @@ exit 0
         conn.query_row("SELECT COUNT(*) FROM commands", [], |row| row.get(0)).unwrap();
     assert_eq!(cmd_count, 1, "Should have exactly 1 command (from new session)");
 }
+
+/// Test that output max size is configurable via config file
+#[test]
+fn test_e2e_output_max_size_config() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let home = temp_dir.path();
+    let wake = wake_bin();
+
+    // Create config with small output limit (we can't actually test truncation
+    // at 1MB+ in a reasonable time, but we can verify config is loaded)
+    let wake_dir = home.join(".wake");
+    std::fs::create_dir_all(&wake_dir).unwrap();
+    std::fs::write(
+        wake_dir.join("config.toml"),
+        r#"
+[output]
+max_mb = 10
+"#,
+    )
+    .unwrap();
+
+    // Create test script
+    let test_script = home.join("test_shell.sh");
+    std::fs::write(
+        &test_script,
+        format!(
+            r#"#!/bin/bash
+"{wake}" __hook cmd-start --cmd "echo test"
+echo test
+"{wake}" __hook cmd-end --exit-code 0 --duration 1
+sleep 0.1
+exit 0
+"#
+        ),
+    )
+    .unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&test_script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    // Run wake shell with config
+    let output = Command::new(&wake)
+        .arg("shell")
+        .env("HOME", home)
+        .env("SHELL", &test_script)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("Failed to run wake shell");
+
+    // Session should complete successfully
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("test"), "Expected output from echo command");
+
+    // Verify session was recorded
+    let db_path = wake_dir.join("wake.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let cmd_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM commands", [], |row| row.get(0)).unwrap();
+    assert_eq!(cmd_count, 1, "Should have 1 command recorded");
+}

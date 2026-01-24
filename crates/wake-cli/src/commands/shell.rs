@@ -18,6 +18,7 @@ struct SessionState {
     db: Database,
     git_cache: GitCache,
     current_command: Option<PendingCommand>,
+    max_output_bytes: usize,
 }
 
 pub async fn run() -> Result<()> {
@@ -39,10 +40,13 @@ pub async fn run() -> Result<()> {
     // Initialize database and create session
     let db = Database::open().context("Failed to open database")?;
 
+    // Load config for retention and output settings
+    let config = Config::load().unwrap_or_default();
+
     // Auto-cleanup old sessions (silent, non-blocking)
-    if let Ok(config) = Config::load() {
-        let _ = db.prune_old_sessions(config.retention.days);
-    }
+    let _ = db.prune_old_sessions(config.retention.days);
+
+    let max_output_bytes = config.output.max_bytes();
 
     db.create_session(&session_id, Some(&shell), project_root.as_deref(), None)
         .context("Failed to create session")?;
@@ -92,6 +96,7 @@ pub async fn run() -> Result<()> {
         db,
         git_cache,
         current_command: None,
+        max_output_bytes,
     }));
 
     // Channel for coordinating shutdown
@@ -238,8 +243,11 @@ fn handle_hook_message(state: &Arc<Mutex<SessionState>>, msg: HookMessage) {
             );
 
             if let Ok(id) = cmd_id {
-                state.current_command =
-                    Some(PendingCommand { id, started_at: timestamp, buffer: OutputBuffer::new() });
+                state.current_command = Some(PendingCommand {
+                    id,
+                    started_at: timestamp,
+                    buffer: OutputBuffer::with_max_bytes(state.max_output_bytes),
+                });
             }
         }
         HookMessage::CmdEnd { exit_code, duration_ms, timestamp: _ } => {

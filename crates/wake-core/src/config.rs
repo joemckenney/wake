@@ -16,6 +16,8 @@ pub enum ConfigError {
 pub struct Config {
     #[serde(default)]
     pub retention: RetentionConfig,
+    #[serde(default)]
+    pub output: OutputConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -35,15 +37,45 @@ fn default_retention_days() -> u32 {
     21
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct OutputConfig {
+    /// Max output size in MB (default: 5)
+    #[serde(default = "default_max_output_mb")]
+    pub max_mb: u32,
+}
+
+impl Default for OutputConfig {
+    fn default() -> Self {
+        Self { max_mb: default_max_output_mb() }
+    }
+}
+
+fn default_max_output_mb() -> u32 {
+    5
+}
+
+impl OutputConfig {
+    /// Returns max output size in bytes
+    pub fn max_bytes(&self) -> usize {
+        self.max_mb as usize * 1024 * 1024
+    }
+}
+
 impl Config {
     /// Load config with precedence: env var > config file > defaults
     pub fn load() -> Result<Self, ConfigError> {
         let mut config = Self::load_from_file().unwrap_or_default();
 
-        // Environment variable override
+        // Environment variable overrides
         if let Ok(days_str) = std::env::var("WAKE_RETENTION_DAYS") {
             if let Ok(days) = days_str.parse::<u32>() {
                 config.retention.days = days;
+            }
+        }
+
+        if let Ok(mb_str) = std::env::var("WAKE_MAX_OUTPUT_MB") {
+            if let Ok(mb) = mb_str.parse::<u32>() {
+                config.output.max_mb = mb;
             }
         }
 
@@ -116,5 +148,51 @@ days = 14
 "#;
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.retention.days, 21); // default when days not specified
+    }
+
+    #[test]
+    fn test_default_output() {
+        let config = Config::default();
+        assert_eq!(config.output.max_mb, 5);
+        assert_eq!(config.output.max_bytes(), 5 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_output_env_var_override() {
+        let original = env::var("WAKE_MAX_OUTPUT_MB").ok();
+
+        env::set_var("WAKE_MAX_OUTPUT_MB", "10");
+        let config = Config::load().unwrap();
+        assert_eq!(config.output.max_mb, 10);
+
+        match original {
+            Some(val) => env::set_var("WAKE_MAX_OUTPUT_MB", val),
+            None => env::remove_var("WAKE_MAX_OUTPUT_MB"),
+        }
+    }
+
+    #[test]
+    fn test_parse_output_config_toml() {
+        let toml_str = r#"
+[output]
+max_mb = 20
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.output.max_mb, 20);
+        assert_eq!(config.output.max_bytes(), 20 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_parse_full_config_toml() {
+        let toml_str = r#"
+[retention]
+days = 30
+
+[output]
+max_mb = 10
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.retention.days, 30);
+        assert_eq!(config.output.max_mb, 10);
     }
 }

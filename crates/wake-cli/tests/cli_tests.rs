@@ -168,3 +168,33 @@ fn test_prune_with_force() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Deleted 1 session"));
 }
+
+#[test]
+fn test_config_file_is_read() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let home = temp_dir.path();
+
+    // Create config file
+    let wake_dir = home.join(".wake");
+    std::fs::create_dir_all(&wake_dir).unwrap();
+    std::fs::write(
+        wake_dir.join("config.toml"),
+        r#"
+[retention]
+days = 7
+
+[output]
+max_mb = 10
+"#,
+    )
+    .unwrap();
+
+    // Run a command that uses the config (prune --dry-run)
+    // This tests that config loading works without errors
+    let output = wake_cmd().args(["prune", "--dry-run"]).env("HOME", home).output().unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Should use 7 days from config
+    assert!(stdout.contains("7 days"), "Expected config to use 7 days retention");
+}

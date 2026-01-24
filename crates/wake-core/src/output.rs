@@ -1,18 +1,24 @@
-const MAX_OUTPUT_BYTES: usize = 100 * 1024; // 100KB
+/// Default max output size: 5MB
+const DEFAULT_MAX_OUTPUT_BYTES: usize = 5 * 1024 * 1024;
 
 #[derive(Debug)]
 pub struct OutputBuffer {
     raw: Vec<u8>,
     truncated: bool,
+    max_bytes: usize,
 }
 
 impl OutputBuffer {
     pub fn new() -> Self {
-        Self { raw: Vec::new(), truncated: false }
+        Self::with_max_bytes(DEFAULT_MAX_OUTPUT_BYTES)
+    }
+
+    pub fn with_max_bytes(max_bytes: usize) -> Self {
+        Self { raw: Vec::new(), truncated: false, max_bytes }
     }
 
     pub fn append(&mut self, data: &[u8]) {
-        let remaining = MAX_OUTPUT_BYTES.saturating_sub(self.raw.len());
+        let remaining = self.max_bytes.saturating_sub(self.raw.len());
         if remaining == 0 {
             self.truncated = true;
             return;
@@ -67,16 +73,35 @@ mod tests {
 
     #[test]
     fn test_buffer_truncation() {
-        let mut buf = OutputBuffer::new();
-        // Append more than MAX_OUTPUT_BYTES
-        let chunk = vec![b'x'; 50 * 1024]; // 50KB
+        // Use a small max size for testing
+        let max_bytes = 1024; // 1KB
+        let mut buf = OutputBuffer::with_max_bytes(max_bytes);
+
+        let chunk = vec![b'x'; 512]; // 512 bytes
         buf.append(&chunk);
-        buf.append(&chunk); // 100KB total
+        buf.append(&chunk); // 1KB total (at limit)
         buf.append(&chunk); // This should be truncated
 
         let result = buf.finish();
-        assert_eq!(result.raw.len(), MAX_OUTPUT_BYTES);
+        assert_eq!(result.raw.len(), max_bytes);
         assert!(result.truncated);
+    }
+
+    #[test]
+    fn test_buffer_with_custom_max_bytes() {
+        let mut buf = OutputBuffer::with_max_bytes(100);
+        buf.append(&[b'a'; 150]);
+
+        let result = buf.finish();
+        assert_eq!(result.raw.len(), 100);
+        assert!(result.truncated);
+    }
+
+    #[test]
+    fn test_default_max_bytes() {
+        let buf = OutputBuffer::new();
+        // Default is 5MB
+        assert_eq!(buf.max_bytes, 5 * 1024 * 1024);
     }
 
     #[test]
