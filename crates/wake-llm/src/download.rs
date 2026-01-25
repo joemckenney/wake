@@ -81,12 +81,14 @@ where
 }
 
 /// Check if a partial download exists and get its size
+#[allow(dead_code)]
 pub async fn partial_download_size(dest: &Path) -> Option<u64> {
     let temp_path = dest.with_extension("tmp");
     tokio::fs::metadata(&temp_path).await.ok().map(|m| m.len())
 }
 
 /// Remove a partial download if it exists
+#[allow(dead_code)]
 pub async fn remove_partial_download(dest: &Path) -> Result<(), DownloadError> {
     let temp_path = dest.with_extension("tmp");
     if temp_path.exists() {
