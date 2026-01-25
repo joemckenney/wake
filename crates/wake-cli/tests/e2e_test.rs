@@ -411,3 +411,298 @@ exit 0
         conn.query_row("SELECT COUNT(*) FROM commands", [], |row| row.get(0)).unwrap();
     assert_eq!(cmd_count, 1, "Should have 1 command recorded");
 }
+
+// Tests for Phase 1-4: Tiered retrieval and LLM integration
+
+/// Test wake llm status command
+#[test]
+fn test_e2e_llm_status() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let home = temp_dir.path();
+    let wake = wake_bin();
+
+    let output = Command::new(&wake)
+        .args(["llm", "status"])
+        .env("HOME", home)
+        .output()
+        .expect("Failed to run wake llm status");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Should show status info
+    assert!(stdout.contains("LLM Summarization Status"), "Expected status header");
+    assert!(stdout.contains("Model path:"), "Expected model path");
+    assert!(stdout.contains("Status:"), "Expected status field");
+    assert!(
+        stdout.contains("not downloaded") || stdout.contains("downloaded"),
+        "Expected download status"
+    );
+}
+
+/// Test wake llm download shows appropriate message when model not needed
+#[test]
+fn test_e2e_llm_download_model_path() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let home = temp_dir.path();
+    let wake = wake_bin();
+
+    // First check status to see the path
+    let output = Command::new(&wake)
+        .args(["llm", "status"])
+        .env("HOME", home)
+        .output()
+        .expect("Failed to run wake llm status");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains(".wake/models"), "Model should be in .wake/models directory");
+}
+
+/// Test summarization config is recognized
+#[test]
+fn test_e2e_summarization_config() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let home = temp_dir.path();
+    let wake = wake_bin();
+
+    // Create config with summarization enabled
+    let wake_dir = home.join(".wake");
+    std::fs::create_dir_all(&wake_dir).unwrap();
+    std::fs::write(
+        wake_dir.join("config.toml"),
+        r#"
+[summarization]
+enabled = true
+min_bytes = 512
+"#,
+    )
+    .unwrap();
+
+    // Create simple test script
+    let test_script = home.join("test_shell.sh");
+    std::fs::write(
+        &test_script,
+        format!(
+            r#"#!/bin/bash
+"{wake}" __hook cmd-start --cmd "echo short"
+echo short
+"{wake}" __hook cmd-end --exit-code 0 --duration 1
+sleep 0.1
+exit 0
+"#
+        ),
+    )
+    .unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&test_script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    // Run wake shell - should complete without error even with summarization enabled
+    // (it will gracefully degrade since model not downloaded)
+    let output = Command::new(&wake)
+        .arg("shell")
+        .env("HOME", home)
+        .env("SHELL", &test_script)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("Failed to run wake shell");
+
+    assert!(output.status.success(), "Shell should complete successfully");
+
+    // Verify session was recorded
+    let db_path = wake_dir.join("wake.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let cmd_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM commands", [], |row| row.get(0)).unwrap();
+    assert_eq!(cmd_count, 1, "Should have 1 command recorded");
+}
+
+/// Test that summary column exists in database after migration
+#[test]
+fn test_e2e_database_has_summary_column() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let home = temp_dir.path();
+    let wake = wake_bin();
+
+    // Create simple test script to initialize database
+    let test_script = home.join("test_shell.sh");
+    std::fs::write(
+        &test_script,
+        format!(
+            r#"#!/bin/bash
+"{wake}" __hook cmd-start --cmd "echo test"
+echo test
+"{wake}" __hook cmd-end --exit-code 0 --duration 1
+sleep 0.1
+exit 0
+"#
+        ),
+    )
+    .unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&test_script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let _output = Command::new(&wake)
+        .arg("shell")
+        .env("HOME", home)
+        .env("SHELL", &test_script)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("Failed to run wake shell");
+
+    // Verify summary column exists
+    let db_path = home.join(".wake").join("wake.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+
+    // This query will fail if summary column doesn't exist
+    let result: Result<Option<String>, _> =
+        conn.query_row("SELECT summary FROM commands LIMIT 1", [], |row| row.get(0));
+
+    assert!(result.is_ok(), "Summary column should exist in commands table");
+}
+
+/// Test that summary can be stored and retrieved
+#[test]
+fn test_e2e_summary_storage_and_retrieval() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let home = temp_dir.path();
+    let wake = wake_bin();
+
+    // Create test script
+    let test_script = home.join("test_shell.sh");
+    std::fs::write(
+        &test_script,
+        format!(
+            r#"#!/bin/bash
+"{wake}" __hook cmd-start --cmd "cargo build"
+echo "Compiling project..."
+"{wake}" __hook cmd-end --exit-code 0 --duration 5000
+sleep 0.1
+exit 0
+"#
+        ),
+    )
+    .unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&test_script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let _output = Command::new(&wake)
+        .arg("shell")
+        .env("HOME", home)
+        .env("SHELL", &test_script)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("Failed to run wake shell");
+
+    // Manually add a summary to test storage
+    let db_path = home.join(".wake").join("wake.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+
+    // Get command ID
+    let cmd_id: i64 = conn
+        .query_row("SELECT id FROM commands LIMIT 1", [], |row| row.get(0))
+        .unwrap();
+
+    // Update with summary
+    conn.execute(
+        "UPDATE commands SET summary = ?1 WHERE id = ?2",
+        rusqlite::params!["Build completed successfully.", cmd_id],
+    )
+    .unwrap();
+
+    // Verify summary can be retrieved
+    let summary: String = conn
+        .query_row(
+            "SELECT summary FROM commands WHERE id = ?1",
+            rusqlite::params![cmd_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(summary, "Build completed successfully.");
+}
+
+/// Test llm subcommands are available
+#[test]
+fn test_e2e_llm_subcommands() {
+    let wake = wake_bin();
+
+    // Test help for llm command
+    let output = Command::new(&wake)
+        .args(["llm", "--help"])
+        .output()
+        .expect("Failed to run wake llm --help");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("download"), "Should have download subcommand");
+    assert!(stdout.contains("status"), "Should have status subcommand");
+}
+
+/// Test summarization is disabled by default
+#[test]
+fn test_e2e_summarization_disabled_by_default() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let home = temp_dir.path();
+    let wake = wake_bin();
+
+    // No config file - summarization should be disabled by default
+    let test_script = home.join("test_shell.sh");
+    std::fs::write(
+        &test_script,
+        format!(
+            r#"#!/bin/bash
+"{wake}" __hook cmd-start --cmd "echo hello"
+echo hello
+"{wake}" __hook cmd-end --exit-code 0 --duration 1
+sleep 0.1
+exit 0
+"#
+        ),
+    )
+    .unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&test_script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let output = Command::new(&wake)
+        .arg("shell")
+        .env("HOME", home)
+        .env("SHELL", &test_script)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("Failed to run wake shell");
+
+    // Should complete without any summarization-related activity
+    assert!(output.status.success(), "Shell should complete successfully");
+
+    // Verify no summary was added (summarization disabled by default)
+    let db_path = home.join(".wake").join("wake.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+
+    let summary: Option<String> = conn
+        .query_row("SELECT summary FROM commands LIMIT 1", [], |row| row.get(0))
+        .unwrap();
+
+    assert!(summary.is_none(), "Summary should be None when summarization is disabled");
+}

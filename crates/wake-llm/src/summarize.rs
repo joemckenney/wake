@@ -88,14 +88,49 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_clean_summary() {
+    fn test_clean_summary_with_prefix() {
         assert_eq!(clean_summary("Summary: Test output"), "Test output");
-        assert_eq!(clean_summary("  Test output  "), "Test output");
     }
 
     #[test]
-    fn test_min_output_check() {
-        // Can't test actual summarization without a model, but we can test the length check
-        assert!(MIN_OUTPUT_BYTES > 0);
+    fn test_clean_summary_whitespace() {
+        assert_eq!(clean_summary("  Test output  "), "Test output");
+        assert_eq!(clean_summary("\n\nTest output\n\n"), "Test output");
+        assert_eq!(clean_summary("\t  Test  \t"), "Test");
+    }
+
+    #[test]
+    fn test_clean_summary_empty() {
+        assert_eq!(clean_summary(""), "");
+        assert_eq!(clean_summary("   "), "");
+    }
+
+    #[test]
+    fn test_clean_summary_truncates_long_text() {
+        let long_text = "x".repeat(600);
+        let cleaned = clean_summary(&long_text);
+        assert!(cleaned.len() <= 500);
+    }
+
+    #[test]
+    fn test_clean_summary_preserves_normal_text() {
+        let text = "Build completed successfully. 42 tests passed, 0 failed.";
+        assert_eq!(clean_summary(text), text);
+    }
+
+    #[test]
+    fn test_min_output_bytes_constant() {
+        assert_eq!(MIN_OUTPUT_BYTES, 100);
+    }
+
+    #[test]
+    fn test_max_output_chars_constant() {
+        assert_eq!(MAX_OUTPUT_CHARS, 4000);
+    }
+
+    #[test]
+    fn test_system_prompt_not_empty() {
+        assert!(!SYSTEM_PROMPT.is_empty());
+        assert!(SYSTEM_PROMPT.contains("summarizer"));
     }
 }

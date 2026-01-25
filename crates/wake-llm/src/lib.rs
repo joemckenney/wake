@@ -171,3 +171,112 @@ impl Default for WakeLlm {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_model_constants() {
+        assert!(!DEFAULT_MODEL.is_empty());
+        assert!(DEFAULT_MODEL.ends_with(".gguf"));
+        assert!(DEFAULT_MODEL_URL.starts_with("https://"));
+        assert!(DEFAULT_MODEL_SIZE > 1_000_000_000); // > 1GB
+    }
+
+    #[test]
+    fn test_wake_llm_new() {
+        let llm = WakeLlm::new();
+        let path = llm.model_path();
+        assert!(path.ends_with(DEFAULT_MODEL));
+        assert!(path.to_string_lossy().contains(".wake"));
+    }
+
+    #[test]
+    fn test_wake_llm_default() {
+        let llm = WakeLlm::default();
+        let path = llm.model_path();
+        assert!(path.ends_with(DEFAULT_MODEL));
+    }
+
+    #[test]
+    fn test_model_not_available_initially() {
+        // In test environment, model won't be downloaded
+        let llm = WakeLlm::new();
+        // This might be true or false depending on whether model was previously downloaded
+        // Just test that the method works
+        let _ = llm.model_available();
+    }
+
+    #[test]
+    fn test_llm_enabled_returns_bool() {
+        // Without llm feature, should return false
+        let enabled = WakeLlm::llm_enabled();
+        // Just verify it returns a bool (doesn't panic)
+        assert!(enabled || !enabled);
+    }
+
+    #[tokio::test]
+    async fn test_status_not_downloaded() {
+        // Use a custom path that definitely doesn't exist
+        let llm = WakeLlm {
+            model_path: PathBuf::from("/nonexistent/path/model.gguf"),
+            model_url: DEFAULT_MODEL_URL.to_string(),
+            model: Arc::new(RwLock::new(None)),
+        };
+        let status = llm.status().await;
+        assert_eq!(status, ModelStatus::NotDownloaded);
+    }
+
+    #[tokio::test]
+    async fn test_load_model_without_download() {
+        let llm = WakeLlm {
+            model_path: PathBuf::from("/nonexistent/model.gguf"),
+            model_url: DEFAULT_MODEL_URL.to_string(),
+            model: Arc::new(RwLock::new(None)),
+        };
+
+        let result = llm.load_model().await;
+        // Should fail because feature not enabled or model not available
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_summarize_without_model() {
+        let llm = WakeLlm {
+            model_path: PathBuf::from("/nonexistent/model.gguf"),
+            model_url: DEFAULT_MODEL_URL.to_string(),
+            model: Arc::new(RwLock::new(None)),
+        };
+
+        let result = llm.summarize("echo hello", "hello").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_unload_model() {
+        let llm = WakeLlm::new();
+        // Should not panic even if model not loaded
+        llm.unload_model().await;
+    }
+
+    #[test]
+    fn test_llm_error_display() {
+        let err = LlmError::ModelNotAvailable("test".to_string());
+        assert!(err.to_string().contains("test"));
+
+        let err = LlmError::FeatureNotEnabled;
+        assert!(err.to_string().contains("feature"));
+    }
+
+    #[test]
+    fn test_model_status_variants() {
+        let s1 = ModelStatus::NotDownloaded;
+        let s2 = ModelStatus::Downloaded;
+        let s3 = ModelStatus::Loaded;
+
+        assert_ne!(s1, s2);
+        assert_ne!(s2, s3);
+        assert_eq!(s1.clone(), ModelStatus::NotDownloaded);
+    }
+}

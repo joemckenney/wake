@@ -94,3 +94,95 @@ pub async fn remove_partial_download(dest: &Path) -> Result<(), DownloadError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_download_progress_new() {
+        let progress = DownloadProgress::new(500, Some(1000));
+        assert_eq!(progress.downloaded, 500);
+        assert_eq!(progress.total, Some(1000));
+        assert!((progress.percent.unwrap() - 50.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_download_progress_no_total() {
+        let progress = DownloadProgress::new(500, None);
+        assert_eq!(progress.downloaded, 500);
+        assert!(progress.total.is_none());
+        assert!(progress.percent.is_none());
+    }
+
+    #[test]
+    fn test_download_progress_zero() {
+        let progress = DownloadProgress::new(0, Some(1000));
+        assert_eq!(progress.downloaded, 0);
+        assert!((progress.percent.unwrap() - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_download_progress_complete() {
+        let progress = DownloadProgress::new(1000, Some(1000));
+        assert!((progress.percent.unwrap() - 100.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_download_progress_clone() {
+        let progress = DownloadProgress::new(250, Some(500));
+        let cloned = progress.clone();
+        assert_eq!(cloned.downloaded, progress.downloaded);
+        assert_eq!(cloned.total, progress.total);
+    }
+
+    #[test]
+    fn test_download_error_display() {
+        let err = DownloadError::Failed("test error".to_string());
+        assert!(err.to_string().contains("test error"));
+    }
+
+    #[test]
+    fn test_temp_path_extension() {
+        let dest = PathBuf::from("/path/to/model.gguf");
+        let temp = dest.with_extension("tmp");
+        assert_eq!(temp, PathBuf::from("/path/to/model.tmp"));
+    }
+
+    #[tokio::test]
+    async fn test_partial_download_size_nonexistent() {
+        let dest = PathBuf::from("/nonexistent/path/model.gguf");
+        let size = partial_download_size(&dest).await;
+        assert!(size.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_remove_partial_download_nonexistent() {
+        let dest = PathBuf::from("/tmp/wake-test-nonexistent.gguf");
+        // Should not error even if file doesn't exist
+        let result = remove_partial_download(&dest).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_download_model_invalid_url() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Arc;
+
+        let dest = PathBuf::from("/tmp/wake-test-invalid-download.gguf");
+        let callback_count = Arc::new(AtomicU32::new(0));
+        let callback_count_clone = callback_count.clone();
+
+        let result = download_model(
+            "https://invalid.invalid.invalid/model.gguf",
+            &dest,
+            move |_| {
+                callback_count_clone.fetch_add(1, Ordering::SeqCst);
+            },
+        )
+        .await;
+
+        assert!(result.is_err());
+    }
+}

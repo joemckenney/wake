@@ -671,4 +671,240 @@ mod tests {
         // Session should still exist
         assert!(db.get_session("new-session").unwrap().is_some());
     }
+
+    // Tests for tiered retrieval (Phase 1)
+
+    #[test]
+    fn test_get_recent_commands_metadata() {
+        let db = temp_db();
+
+        db.create_session("sess-meta", None, None, None).unwrap();
+
+        // Create commands with varying output sizes
+        let id1 = db.insert_command("sess-meta", "ls", None, None).unwrap();
+        db.finish_command(id1, 0, 50, "file1.txt", b"file1.txt", false).unwrap();
+
+        let id2 = db.insert_command("sess-meta", "cat large.txt", None, None).unwrap();
+        let large_output = "x".repeat(10000);
+        db.finish_command(id2, 0, 100, &large_output, large_output.as_bytes(), true).unwrap();
+
+        let id3 = db.insert_command("sess-meta", "echo hello", None, None).unwrap();
+        db.finish_command(id3, 0, 10, "hello", b"hello", false).unwrap();
+
+        let metadata = db.get_recent_commands_metadata(10).unwrap();
+        assert_eq!(metadata.len(), 3);
+
+        // Most recent first
+        assert_eq!(metadata[0].command, "echo hello");
+        assert_eq!(metadata[0].exit_code, Some(0));
+        assert_eq!(metadata[0].output_bytes, Some(5)); // "hello".len()
+        assert!(!metadata[0].truncated);
+
+        // Second command had truncated output
+        assert_eq!(metadata[1].command, "cat large.txt");
+        assert!(metadata[1].truncated);
+        assert_eq!(metadata[1].output_bytes, Some(10000));
+
+        // First command
+        assert_eq!(metadata[2].command, "ls");
+    }
+
+    #[test]
+    fn test_get_recent_commands_metadata_limit() {
+        let db = temp_db();
+
+        db.create_session("sess-limit", None, None, None).unwrap();
+
+        for i in 0..10 {
+            let id = db.insert_command("sess-limit", &format!("cmd{i}"), None, None).unwrap();
+            db.finish_command(id, 0, 10, "", b"", false).unwrap();
+        }
+
+        let metadata = db.get_recent_commands_metadata(3).unwrap();
+        assert_eq!(metadata.len(), 3);
+        assert_eq!(metadata[0].command, "cmd9");
+        assert_eq!(metadata[1].command, "cmd8");
+        assert_eq!(metadata[2].command, "cmd7");
+    }
+
+    #[test]
+    fn test_get_recent_commands_metadata_empty() {
+        let db = temp_db();
+
+        let metadata = db.get_recent_commands_metadata(10).unwrap();
+        assert!(metadata.is_empty());
+    }
+
+    #[test]
+    fn test_get_command_output() {
+        let db = temp_db();
+
+        db.create_session("sess-output", None, None, None).unwrap();
+
+        let id = db.insert_command("sess-output", "echo test", None, None).unwrap();
+        db.finish_command(id, 0, 10, "test output here", b"test output here", false).unwrap();
+
+        let output = db.get_command_output(id).unwrap();
+        assert_eq!(output, Some("test output here".to_string()));
+    }
+
+    #[test]
+    fn test_get_command_output_empty() {
+        let db = temp_db();
+
+        db.create_session("sess-empty", None, None, None).unwrap();
+
+        let id = db.insert_command("sess-empty", "true", None, None).unwrap();
+        db.finish_command(id, 0, 5, "", b"", false).unwrap();
+
+        let output = db.get_command_output(id).unwrap();
+        assert_eq!(output, Some("".to_string()));
+    }
+
+    #[test]
+    fn test_get_command_output_nonexistent() {
+        let db = temp_db();
+
+        let output = db.get_command_output(99999).unwrap();
+        assert!(output.is_none());
+    }
+
+    #[test]
+    fn test_get_command_output_large() {
+        let db = temp_db();
+
+        db.create_session("sess-large", None, None, None).unwrap();
+
+        let large_output = "line\n".repeat(10000);
+        let id = db.insert_command("sess-large", "generate", None, None).unwrap();
+        db.finish_command(id, 0, 1000, &large_output, large_output.as_bytes(), false).unwrap();
+
+        let output = db.get_command_output(id).unwrap();
+        assert_eq!(output.unwrap().len(), large_output.len());
+    }
+
+    #[test]
+    fn test_update_command_summary() {
+        let db = temp_db();
+
+        db.create_session("sess-summary", None, None, None).unwrap();
+
+        let id = db.insert_command("sess-summary", "cargo build", None, None).unwrap();
+        db.finish_command(id, 0, 5000, "Compiling...\nFinished.", b"", false).unwrap();
+
+        // Initially no summary
+        let commands = db.get_recent_commands(1).unwrap();
+        assert!(commands[0].summary.is_none());
+
+        // Update summary
+        db.update_command_summary(id, "Build completed successfully with no errors.").unwrap();
+
+        // Verify summary is stored
+        let commands = db.get_recent_commands(1).unwrap();
+        assert_eq!(commands[0].summary, Some("Build completed successfully with no errors.".to_string()));
+    }
+
+    #[test]
+    fn test_update_command_summary_in_metadata() {
+        let db = temp_db();
+
+        db.create_session("sess-sum-meta", None, None, None).unwrap();
+
+        let id = db.insert_command("sess-sum-meta", "npm test", None, None).unwrap();
+        db.finish_command(id, 0, 3000, "Tests passed", b"", false).unwrap();
+
+        db.update_command_summary(id, "All 42 tests passed.").unwrap();
+
+        // Verify summary appears in metadata
+        let metadata = db.get_recent_commands_metadata(1).unwrap();
+        assert_eq!(metadata[0].summary, Some("All 42 tests passed.".to_string()));
+    }
+
+    #[test]
+    fn test_update_command_summary_overwrite() {
+        let db = temp_db();
+
+        db.create_session("sess-overwrite", None, None, None).unwrap();
+
+        let id = db.insert_command("sess-overwrite", "test", None, None).unwrap();
+        db.finish_command(id, 0, 100, "output", b"output", false).unwrap();
+
+        // Set initial summary
+        db.update_command_summary(id, "First summary").unwrap();
+
+        // Overwrite with new summary
+        db.update_command_summary(id, "Updated summary").unwrap();
+
+        let commands = db.get_recent_commands(1).unwrap();
+        assert_eq!(commands[0].summary, Some("Updated summary".to_string()));
+    }
+
+    #[test]
+    fn test_summary_field_in_command_struct() {
+        let db = temp_db();
+
+        db.create_session("sess-struct", None, None, None).unwrap();
+
+        let id = db.insert_command("sess-struct", "ls -la", None, None).unwrap();
+        db.finish_command(id, 0, 50, "total 100\ndrwxr-xr-x", b"", false).unwrap();
+
+        db.update_command_summary(id, "Listed 100 items in directory.").unwrap();
+
+        // Test get_recent_commands includes summary
+        let commands = db.get_recent_commands(1).unwrap();
+        assert_eq!(commands[0].summary, Some("Listed 100 items in directory.".to_string()));
+
+        // Test get_session_commands includes summary
+        let session_commands = db.get_session_commands("sess-struct").unwrap();
+        assert_eq!(session_commands[0].summary, Some("Listed 100 items in directory.".to_string()));
+
+        // Test search_commands includes summary
+        let search_results = db.search_commands("ls").unwrap();
+        assert_eq!(search_results[0].summary, Some("Listed 100 items in directory.".to_string()));
+    }
+
+    #[test]
+    fn test_commands_without_summary() {
+        let db = temp_db();
+
+        db.create_session("sess-nosummary", None, None, None).unwrap();
+
+        let id = db.insert_command("sess-nosummary", "pwd", None, None).unwrap();
+        db.finish_command(id, 0, 10, "/home/user", b"/home/user", false).unwrap();
+
+        // Command without summary should have None
+        let commands = db.get_recent_commands(1).unwrap();
+        assert!(commands[0].summary.is_none());
+
+        let metadata = db.get_recent_commands_metadata(1).unwrap();
+        assert!(metadata[0].summary.is_none());
+    }
+
+    #[test]
+    fn test_mixed_commands_with_and_without_summaries() {
+        let db = temp_db();
+
+        db.create_session("sess-mixed", None, None, None).unwrap();
+
+        // Command without summary
+        let id1 = db.insert_command("sess-mixed", "cd /tmp", None, None).unwrap();
+        db.finish_command(id1, 0, 5, "", b"", false).unwrap();
+
+        // Command with summary
+        let id2 = db.insert_command("sess-mixed", "cargo build", None, None).unwrap();
+        db.finish_command(id2, 0, 5000, "Compiling...", b"", false).unwrap();
+        db.update_command_summary(id2, "Build succeeded.").unwrap();
+
+        // Command without summary
+        let id3 = db.insert_command("sess-mixed", "ls", None, None).unwrap();
+        db.finish_command(id3, 0, 20, "file.txt", b"", false).unwrap();
+
+        let metadata = db.get_recent_commands_metadata(10).unwrap();
+        assert_eq!(metadata.len(), 3);
+
+        // Most recent first
+        assert!(metadata[0].summary.is_none()); // ls
+        assert_eq!(metadata[1].summary, Some("Build succeeded.".to_string())); // cargo build
+        assert!(metadata[2].summary.is_none()); // cd
+    }
 }
