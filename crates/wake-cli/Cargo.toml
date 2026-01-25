@@ -11,7 +11,10 @@ path = "src/main.rs"
 
 [dependencies]
 wake-core.workspace = true
+wake-llm.workspace = true
 tokio.workspace = true
+tracing = "0.1"
+indicatif = "0.17"
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true

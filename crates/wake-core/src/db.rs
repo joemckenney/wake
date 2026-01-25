@@ -36,6 +36,21 @@ pub struct Command {
     pub output: Option<String>,
     pub output_bytes: Option<i64>,
     pub truncated: bool,
+    pub summary: Option<String>,
+}
+
+/// Lightweight command metadata without full output (for tiered retrieval)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandMetadata {
+    pub id: i64,
+    pub session_id: String,
+    pub started_at: DateTime<Utc>,
+    pub command: String,
+    pub exit_code: Option<i32>,
+    pub duration_ms: Option<i64>,
+    pub output_bytes: Option<i64>,
+    pub truncated: bool,
+    pub summary: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,6 +91,13 @@ impl Database {
 
     fn migrate(&self) -> Result<(), DbError> {
         self.conn.execute_batch(include_str!("schema.sql"))?;
+
+        // Add summary column (v0.4.0+)
+        let _ = self.conn.execute(
+            "ALTER TABLE commands ADD COLUMN summary TEXT",
+            [],
+        ); // Ignore error if column already exists
+
         Ok(())
     }
 
@@ -177,7 +199,7 @@ impl Database {
 
     pub fn get_recent_commands(&self, limit: usize) -> Result<Vec<Command>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, session_id, started_at, ended_at, command, working_dir, git_branch, exit_code, duration_ms, output, output_bytes, truncated
+            "SELECT id, session_id, started_at, ended_at, command, working_dir, git_branch, exit_code, duration_ms, output, output_bytes, truncated, summary
              FROM commands ORDER BY started_at DESC LIMIT ?1",
         )?;
         let commands = stmt
@@ -195,6 +217,7 @@ impl Database {
                     output: row.get(9)?,
                     output_bytes: row.get(10)?,
                     truncated: row.get(11)?,
+                    summary: row.get(12)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -203,7 +226,7 @@ impl Database {
 
     pub fn get_session_commands(&self, session_id: &str) -> Result<Vec<Command>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, session_id, started_at, ended_at, command, working_dir, git_branch, exit_code, duration_ms, output, output_bytes, truncated
+            "SELECT id, session_id, started_at, ended_at, command, working_dir, git_branch, exit_code, duration_ms, output, output_bytes, truncated, summary
              FROM commands WHERE session_id = ?1 ORDER BY started_at ASC",
         )?;
         let commands = stmt
@@ -221,6 +244,7 @@ impl Database {
                     output: row.get(9)?,
                     output_bytes: row.get(10)?,
                     truncated: row.get(11)?,
+                    summary: row.get(12)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -230,7 +254,7 @@ impl Database {
     pub fn search_commands(&self, query: &str) -> Result<Vec<Command>, DbError> {
         let pattern = format!("%{query}%");
         let mut stmt = self.conn.prepare(
-            "SELECT id, session_id, started_at, ended_at, command, working_dir, git_branch, exit_code, duration_ms, output, output_bytes, truncated
+            "SELECT id, session_id, started_at, ended_at, command, working_dir, git_branch, exit_code, duration_ms, output, output_bytes, truncated, summary
              FROM commands WHERE command LIKE ?1 OR output LIKE ?1 ORDER BY started_at DESC LIMIT 50",
         )?;
         let commands = stmt
@@ -248,6 +272,7 @@ impl Database {
                     output: row.get(9)?,
                     output_bytes: row.get(10)?,
                     truncated: row.get(11)?,
+                    summary: row.get(12)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -261,6 +286,52 @@ impl Database {
             |row| row.get(0),
         )?;
         Ok(count)
+    }
+
+    /// Get recent command metadata (without full output) for tiered retrieval
+    pub fn get_recent_commands_metadata(&self, limit: usize) -> Result<Vec<CommandMetadata>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, session_id, started_at, command, exit_code, duration_ms, output_bytes, truncated, summary
+             FROM commands ORDER BY started_at DESC LIMIT ?1",
+        )?;
+        let commands = stmt
+            .query_map(params![limit as i64], |row| {
+                Ok(CommandMetadata {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    started_at: parse_datetime(row.get::<_, String>(2)?),
+                    command: row.get(3)?,
+                    exit_code: row.get(4)?,
+                    duration_ms: row.get(5)?,
+                    output_bytes: row.get(6)?,
+                    truncated: row.get(7)?,
+                    summary: row.get(8)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(commands)
+    }
+
+    /// Get full output for a specific command by ID
+    pub fn get_command_output(&self, id: i64) -> Result<Option<String>, DbError> {
+        let output: Option<String> = self.conn
+            .query_row(
+                "SELECT output FROM commands WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        Ok(output)
+    }
+
+    /// Update the summary for a command
+    pub fn update_command_summary(&self, id: i64, summary: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE commands SET summary = ?1 WHERE id = ?2",
+            params![summary, id],
+        )?;
+        Ok(())
     }
 
     // Annotation operations

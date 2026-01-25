@@ -18,6 +18,8 @@ pub struct Config {
     pub retention: RetentionConfig,
     #[serde(default)]
     pub output: OutputConfig,
+    #[serde(default)]
+    pub summarization: SummarizationConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -58,6 +60,36 @@ impl OutputConfig {
     /// Returns max output size in bytes
     pub fn max_bytes(&self) -> usize {
         self.max_mb as usize * 1024 * 1024
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SummarizationConfig {
+    /// Enable LLM summarization of command outputs (default: false)
+    #[serde(default)]
+    pub enabled: bool,
+    /// Minimum output size in bytes to trigger summarization (default: 1024)
+    #[serde(default = "default_min_bytes")]
+    pub min_bytes: u32,
+}
+
+impl Default for SummarizationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            min_bytes: default_min_bytes(),
+        }
+    }
+}
+
+fn default_min_bytes() -> u32 {
+    1024
+}
+
+impl SummarizationConfig {
+    /// Returns min output size in bytes as usize
+    pub fn min_bytes_usize(&self) -> usize {
+        self.min_bytes as usize
     }
 }
 
@@ -190,9 +222,42 @@ days = 30
 
 [output]
 max_mb = 10
+
+[summarization]
+enabled = true
+min_bytes = 2048
 "#;
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.retention.days, 30);
         assert_eq!(config.output.max_mb, 10);
+        assert!(config.summarization.enabled);
+        assert_eq!(config.summarization.min_bytes, 2048);
+    }
+
+    #[test]
+    fn test_default_summarization() {
+        let config = Config::default();
+        assert!(!config.summarization.enabled);
+        assert_eq!(config.summarization.min_bytes, 1024);
+        assert_eq!(config.summarization.min_bytes_usize(), 1024);
+    }
+
+    #[test]
+    fn test_parse_summarization_config_toml() {
+        let toml_str = r#"
+[summarization]
+enabled = true
+min_bytes = 512
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert!(config.summarization.enabled);
+        assert_eq!(config.summarization.min_bytes, 512);
+    }
+
+    #[test]
+    fn test_summarization_disabled_by_default() {
+        let toml_str = "";
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert!(!config.summarization.enabled);
     }
 }

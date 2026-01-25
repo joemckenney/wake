@@ -30,6 +30,36 @@ pub fn list_tools() -> Vec<Tool> {
             }),
         },
         Tool {
+            name: "wake_list_commands",
+            description: "List recent commands with metadata only (no full output). Returns id, command, exit_code, output_bytes, and summary. Use wake_get_output to fetch full output for specific commands.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "description": "Number of commands to return (default: 20)",
+                        "default": 20
+                    }
+                },
+                "required": []
+            }),
+        },
+        Tool {
+            name: "wake_get_output",
+            description: "Get full output for specific command IDs. Use after wake_list_commands to fetch output for commands of interest.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "ids": {
+                        "type": "array",
+                        "items": { "type": "integer" },
+                        "description": "List of command IDs to fetch output for"
+                    }
+                },
+                "required": ["ids"]
+            }),
+        },
+        Tool {
             name: "wake_search",
             description: "Search command history by command text or output content",
             input_schema: json!({
@@ -85,6 +115,21 @@ fn default_count() -> usize {
     10
 }
 
+#[derive(Debug, Deserialize, Default)]
+struct ListCommandsArgs {
+    #[serde(default = "default_list_count")]
+    count: usize,
+}
+
+fn default_list_count() -> usize {
+    20
+}
+
+#[derive(Debug, Deserialize)]
+struct GetOutputArgs {
+    ids: Vec<i64>,
+}
+
 #[derive(Debug, Deserialize)]
 struct SearchArgs {
     query: String,
@@ -107,6 +152,14 @@ pub fn call_tool(db: &Database, name: &str, arguments: serde_json::Value) -> Too
             let args: LogArgs = serde_json::from_value(arguments).unwrap_or_default();
             tool_log(db, args.count)
         }
+        "wake_list_commands" => {
+            let args: ListCommandsArgs = serde_json::from_value(arguments).unwrap_or_default();
+            tool_list_commands(db, args.count)
+        }
+        "wake_get_output" => match serde_json::from_value::<GetOutputArgs>(arguments) {
+            Ok(args) => tool_get_output(db, &args.ids),
+            Err(e) => ToolCallResult::error(format!("Invalid arguments: {e}")),
+        },
         "wake_search" => match serde_json::from_value::<SearchArgs>(arguments) {
             Ok(args) => tool_search(db, &args.query),
             Err(e) => ToolCallResult::error(format!("Invalid arguments: {e}")),
@@ -206,6 +259,77 @@ fn tool_log(db: &Database, count: usize) -> ToolCallResult {
     }
 
     ToolCallResult::text(output)
+}
+
+fn tool_list_commands(db: &Database, count: usize) -> ToolCallResult {
+    let commands = match db.get_recent_commands_metadata(count) {
+        Ok(c) => c,
+        Err(e) => return ToolCallResult::error(format!("Database error: {e}")),
+    };
+
+    if commands.is_empty() {
+        return ToolCallResult::text("No commands recorded yet.");
+    }
+
+    let mut output = String::new();
+    for cmd in commands.iter().rev() {
+        let exit_indicator = match cmd.exit_code {
+            Some(0) => "✓",
+            Some(_) => "✗",
+            None => "?",
+        };
+
+        let time = cmd.started_at.format("%H:%M:%S");
+        let size = cmd.output_bytes.map(|b| format_bytes(b)).unwrap_or_default();
+        let truncated = if cmd.truncated { " [truncated]" } else { "" };
+
+        output.push_str(&format!(
+            "{exit_indicator} [id:{} {time}] {} ({size}{truncated})\n",
+            cmd.id, cmd.command
+        ));
+
+        if let Some(ref summary) = cmd.summary {
+            output.push_str(&format!("  └ {summary}\n"));
+        }
+    }
+
+    output.push_str("\nUse wake_get_output with ids to fetch full output for specific commands.");
+    ToolCallResult::text(output)
+}
+
+fn tool_get_output(db: &Database, ids: &[i64]) -> ToolCallResult {
+    if ids.is_empty() {
+        return ToolCallResult::error("No command IDs provided");
+    }
+
+    let mut output = String::new();
+    for &id in ids {
+        match db.get_command_output(id) {
+            Ok(Some(cmd_output)) => {
+                output.push_str(&format!("=== Command ID: {} ===\n", id));
+                output.push_str(&cmd_output);
+                output.push_str("\n\n");
+            }
+            Ok(None) => {
+                output.push_str(&format!("=== Command ID: {} ===\n(no output or not found)\n\n", id));
+            }
+            Err(e) => {
+                output.push_str(&format!("=== Command ID: {} ===\nError: {}\n\n", id, e));
+            }
+        }
+    }
+
+    ToolCallResult::text(output)
+}
+
+fn format_bytes(bytes: i64) -> String {
+    if bytes < 1024 {
+        format!("{} B", bytes)
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    }
 }
 
 fn tool_search(db: &Database, query: &str) -> ToolCallResult {

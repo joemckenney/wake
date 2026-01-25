@@ -42,6 +42,11 @@ enum Commands {
         /// Shell type (zsh, bash)
         shell: String,
     },
+    /// Manage local LLM for summarization
+    Llm {
+        #[command(subcommand)]
+        action: LlmAction,
+    },
     /// Internal: called by shell hooks
     #[command(name = "__hook", hide = true)]
     Hook {
@@ -60,6 +65,14 @@ enum Commands {
         #[arg(long, value_name = "DAYS")]
         older_than: Option<u32>,
     },
+}
+
+#[derive(Subcommand)]
+enum LlmAction {
+    /// Download the summarization model
+    Download,
+    /// Show model status and path
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -90,6 +103,10 @@ async fn main() -> anyhow::Result<()> {
         Commands::Dump => commands::dump::run().await,
         Commands::Annotate { note } => commands::annotate::run(&note).await,
         Commands::Init { shell } => commands::init::run(&shell).await,
+        Commands::Llm { action } => match action {
+            LlmAction::Download => commands::llm::download().await,
+            LlmAction::Status => commands::llm::status().await,
+        },
         Commands::Hook { event } => match event {
             HookEvent::CmdStart { cmd } => commands::hook::cmd_start(&cmd).await,
             HookEvent::CmdEnd { exit_code, duration } => {

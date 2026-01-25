@@ -45,3 +45,4 @@ libc = "0.2"
 
 # Internal crates
 wake-core = { path = "crates/wake-core" }
+wake-llm = { path = "crates/wake-llm" }
