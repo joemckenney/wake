@@ -62,7 +62,25 @@ wake prune              # Delete old sessions
 wake prune --dry-run    # Preview what would be deleted
 wake prune --force      # Skip confirmation
 wake prune --older-than 7  # Override retention period (days)
+wake llm status         # Check LLM summarization status
+wake llm download       # Download summarization model
 ```
+
+### MCP Tools
+
+Claude Code uses these tools via the MCP server:
+
+| Tool | Purpose |
+|------|---------|
+| `wake_status` | Current session info |
+| `wake_list_commands` | List recent commands with metadata and summaries (no full output) |
+| `wake_get_output` | Fetch full output for specific command IDs |
+| `wake_log` | Recent commands with truncated output |
+| `wake_search` | Search command history |
+| `wake_dump` | Export session as markdown |
+| `wake_annotate` | Add notes to the session |
+
+The `wake_list_commands` + `wake_get_output` pattern enables **tiered retrieval**—Claude sees command metadata first, then fetches full output only when needed. This reduces context usage for long sessions.
 
 ### Configuration
 
@@ -74,9 +92,13 @@ days = 21      # Delete sessions older than this (default: 21)
 
 [output]
 max_mb = 5     # Max output size per command in MB (default: 5)
+
+[summarization]
+enabled = true   # Enable LLM summarization of command outputs (default: false)
+min_bytes = 500  # Minimum output size to trigger summarization (default: 1024)
 ```
 
-Or use environment variables (take precedence):
+Or use environment variables (take precedence over config file):
 
 ```sh
 export WAKE_RETENTION_DAYS=14
@@ -84,6 +106,20 @@ export WAKE_MAX_OUTPUT_MB=10
 ```
 
 Old sessions are automatically pruned on each `wake shell` start.
+
+### LLM Summarization (Optional)
+
+Wake can automatically summarize command outputs using a local LLM. Summaries appear in `wake_list_commands` output, helping Claude quickly understand what happened without reading full output.
+
+**Requirements:**
+- Build with `cargo build --features llm --release`
+- Download the model: `wake llm download` (~2.3GB)
+- GPU recommended (CPU inference is very slow)
+
+**How it works:**
+1. When a command completes with output > `min_bytes`, it's queued for summarization
+2. A background task runs inference on the local model
+3. Summaries are stored in the database and exposed via MCP tools
 
 ## How It Works
 
@@ -149,6 +185,9 @@ Old sessions are automatically pruned on each `wake shell` start.
 git clone https://github.com/joemckenney/wake
 cd wake
 cargo build --release
+
+# With LLM summarization support (optional, adds ~2min build time)
+cargo build --release --features llm
 ```
 
 ## License
