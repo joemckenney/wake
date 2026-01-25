@@ -50,10 +50,7 @@ pub async fn summarize(
     };
 
     // Build the user message
-    let user_message = format!(
-        "Command: {}\n\nOutput:\n```\n{}\n```",
-        command, truncated_output
-    );
+    let user_message = format!("Command: {}\n\nOutput:\n```\n{}\n```", command, truncated_output);
 
     // Generate summary
     let summary = model
@@ -130,7 +127,10 @@ mod tests {
 
     #[test]
     fn test_system_prompt_not_empty() {
-        assert!(!SYSTEM_PROMPT.is_empty());
+        #[allow(clippy::const_is_empty)]
+        {
+            assert!(!SYSTEM_PROMPT.is_empty());
+        }
         assert!(SYSTEM_PROMPT.contains("summarizer"));
     }
 }

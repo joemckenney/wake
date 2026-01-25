@@ -344,7 +344,10 @@ async fn run_summarization_task(mut rx: mpsc::Receiver<SummarizeRequest>) {
         match llm.summarize(&request.command, &request.output).await {
             Ok(summary) => {
                 if let Err(e) = db.update_command_summary(request.command_id, &summary) {
-                    tracing::warn!("Failed to save summary for command {}: {e}", request.command_id);
+                    tracing::warn!(
+                        "Failed to save summary for command {}: {e}",
+                        request.command_id
+                    );
                 }
             }
             Err(e) => {

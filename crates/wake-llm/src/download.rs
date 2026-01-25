@@ -41,9 +41,7 @@ pub async fn download_model<F>(
 where
     F: Fn(DownloadProgress) + Send + 'static,
 {
-    let client = Client::builder()
-        .user_agent("wake-llm/0.1")
-        .build()?;
+    let client = Client::builder().user_agent("wake-llm/0.1").build()?;
 
     let response = client.get(url).send().await?;
 
@@ -176,14 +174,11 @@ mod tests {
         let callback_count = Arc::new(AtomicU32::new(0));
         let callback_count_clone = callback_count.clone();
 
-        let result = download_model(
-            "https://invalid.invalid.invalid/model.gguf",
-            &dest,
-            move |_| {
+        let result =
+            download_model("https://invalid.invalid.invalid/model.gguf", &dest, move |_| {
                 callback_count_clone.fetch_add(1, Ordering::SeqCst);
-            },
-        )
-        .await;
+            })
+            .await;
 
         assert!(result.is_err());
     }

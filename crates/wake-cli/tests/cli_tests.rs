@@ -214,11 +214,7 @@ fn test_llm_help() {
 #[test]
 fn test_llm_status() {
     let temp_dir = tempfile::tempdir().unwrap();
-    let output = wake_cmd()
-        .args(["llm", "status"])
-        .env("HOME", temp_dir.path())
-        .output()
-        .unwrap();
+    let output = wake_cmd().args(["llm", "status"]).env("HOME", temp_dir.path()).output().unwrap();
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -230,11 +226,7 @@ fn test_llm_status() {
 #[test]
 fn test_llm_status_shows_feature_status() {
     let temp_dir = tempfile::tempdir().unwrap();
-    let output = wake_cmd()
-        .args(["llm", "status"])
-        .env("HOME", temp_dir.path())
-        .output()
-        .unwrap();
+    let output = wake_cmd().args(["llm", "status"]).env("HOME", temp_dir.path()).output().unwrap();
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);

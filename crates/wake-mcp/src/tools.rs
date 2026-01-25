@@ -280,7 +280,7 @@ fn tool_list_commands(db: &Database, count: usize) -> ToolCallResult {
         };
 
         let time = cmd.started_at.format("%H:%M:%S");
-        let size = cmd.output_bytes.map(|b| format_bytes(b)).unwrap_or_default();
+        let size = cmd.output_bytes.map(format_bytes).unwrap_or_default();
         let truncated = if cmd.truncated { " [truncated]" } else { "" };
 
         output.push_str(&format!(
@@ -311,7 +311,8 @@ fn tool_get_output(db: &Database, ids: &[i64]) -> ToolCallResult {
                 output.push_str("\n\n");
             }
             Ok(None) => {
-                output.push_str(&format!("=== Command ID: {} ===\n(no output or not found)\n\n", id));
+                output
+                    .push_str(&format!("=== Command ID: {} ===\n(no output or not found)\n\n", id));
             }
             Err(e) => {
                 output.push_str(&format!("=== Command ID: {} ===\nError: {}\n\n", id, e));

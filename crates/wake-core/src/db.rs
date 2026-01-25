@@ -93,10 +93,7 @@ impl Database {
         self.conn.execute_batch(include_str!("schema.sql"))?;
 
         // Add summary column (v0.4.0+)
-        let _ = self.conn.execute(
-            "ALTER TABLE commands ADD COLUMN summary TEXT",
-            [],
-        ); // Ignore error if column already exists
+        let _ = self.conn.execute("ALTER TABLE commands ADD COLUMN summary TEXT", []); // Ignore error if column already exists
 
         Ok(())
     }
@@ -289,7 +286,10 @@ impl Database {
     }
 
     /// Get recent command metadata (without full output) for tiered retrieval
-    pub fn get_recent_commands_metadata(&self, limit: usize) -> Result<Vec<CommandMetadata>, DbError> {
+    pub fn get_recent_commands_metadata(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<CommandMetadata>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, session_id, started_at, command, exit_code, duration_ms, output_bytes, truncated, summary
              FROM commands ORDER BY started_at DESC LIMIT ?1",
@@ -314,12 +314,9 @@ impl Database {
 
     /// Get full output for a specific command by ID
     pub fn get_command_output(&self, id: i64) -> Result<Option<String>, DbError> {
-        let output: Option<String> = self.conn
-            .query_row(
-                "SELECT output FROM commands WHERE id = ?1",
-                params![id],
-                |row| row.get(0),
-            )
+        let output: Option<String> = self
+            .conn
+            .query_row("SELECT output FROM commands WHERE id = ?1", params![id], |row| row.get(0))
             .optional()?
             .flatten();
         Ok(output)
@@ -327,10 +324,8 @@ impl Database {
 
     /// Update the summary for a command
     pub fn update_command_summary(&self, id: i64, summary: &str) -> Result<(), DbError> {
-        self.conn.execute(
-            "UPDATE commands SET summary = ?1 WHERE id = ?2",
-            params![summary, id],
-        )?;
+        self.conn
+            .execute("UPDATE commands SET summary = ?1 WHERE id = ?2", params![summary, id])?;
         Ok(())
     }
 
@@ -801,7 +796,10 @@ mod tests {
 
         // Verify summary is stored
         let commands = db.get_recent_commands(1).unwrap();
-        assert_eq!(commands[0].summary, Some("Build completed successfully with no errors.".to_string()));
+        assert_eq!(
+            commands[0].summary,
+            Some("Build completed successfully with no errors.".to_string())
+        );
     }
 
     #[test]

@@ -75,10 +75,7 @@ pub struct SummarizationConfig {
 
 impl Default for SummarizationConfig {
     fn default() -> Self {
-        Self {
-            enabled: false,
-            min_bytes: default_min_bytes(),
-        }
+        Self { enabled: false, min_bytes: default_min_bytes() }
     }
 }
 

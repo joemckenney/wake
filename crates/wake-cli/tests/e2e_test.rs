@@ -615,9 +615,8 @@ exit 0
     let conn = rusqlite::Connection::open(&db_path).unwrap();
 
     // Get command ID
-    let cmd_id: i64 = conn
-        .query_row("SELECT id FROM commands LIMIT 1", [], |row| row.get(0))
-        .unwrap();
+    let cmd_id: i64 =
+        conn.query_row("SELECT id FROM commands LIMIT 1", [], |row| row.get(0)).unwrap();
 
     // Update with summary
     conn.execute(
@@ -628,11 +627,9 @@ exit 0
 
     // Verify summary can be retrieved
     let summary: String = conn
-        .query_row(
-            "SELECT summary FROM commands WHERE id = ?1",
-            rusqlite::params![cmd_id],
-            |row| row.get(0),
-        )
+        .query_row("SELECT summary FROM commands WHERE id = ?1", rusqlite::params![cmd_id], |row| {
+            row.get(0)
+        })
         .unwrap();
 
     assert_eq!(summary, "Build completed successfully.");
@@ -700,9 +697,8 @@ exit 0
     let db_path = home.join(".wake").join("wake.db");
     let conn = rusqlite::Connection::open(&db_path).unwrap();
 
-    let summary: Option<String> = conn
-        .query_row("SELECT summary FROM commands LIMIT 1", [], |row| row.get(0))
-        .unwrap();
+    let summary: Option<String> =
+        conn.query_row("SELECT summary FROM commands LIMIT 1", [], |row| row.get(0)).unwrap();
 
     assert!(summary.is_none(), "Summary should be None when summarization is disabled");
 }

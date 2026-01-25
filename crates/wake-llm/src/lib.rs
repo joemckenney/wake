@@ -151,9 +151,9 @@ impl WakeLlm {
         self.load_model().await?;
 
         let model_guard = self.model.read().await;
-        let model = model_guard.as_ref().ok_or_else(|| {
-            LlmError::ModelNotAvailable("Model failed to load".to_string())
-        })?;
+        let model = model_guard
+            .as_ref()
+            .ok_or_else(|| LlmError::ModelNotAvailable("Model failed to load".to_string()))?;
 
         let summary = summarize::summarize(model, command, output).await?;
         Ok(summary)
@@ -178,10 +178,17 @@ mod tests {
 
     #[test]
     fn test_default_model_constants() {
-        assert!(!DEFAULT_MODEL.is_empty());
+        // Verify constants are sensible (clippy allow for const checks)
+        #[allow(clippy::const_is_empty)]
+        {
+            assert!(!DEFAULT_MODEL.is_empty());
+        }
         assert!(DEFAULT_MODEL.ends_with(".gguf"));
         assert!(DEFAULT_MODEL_URL.starts_with("https://"));
-        assert!(DEFAULT_MODEL_SIZE > 1_000_000_000); // > 1GB
+        #[allow(clippy::assertions_on_constants)]
+        {
+            assert!(DEFAULT_MODEL_SIZE > 1_000_000_000); // > 1GB
+        }
     }
 
     #[test]
@@ -210,10 +217,13 @@ mod tests {
 
     #[test]
     fn test_llm_enabled_returns_bool() {
-        // Without llm feature, should return false
+        // Without llm feature, should return false; with it, true
         let enabled = WakeLlm::llm_enabled();
-        // Just verify it returns a bool (doesn't panic)
-        assert!(enabled || !enabled);
+        // In default test config (no llm feature), should be false
+        #[cfg(not(feature = "llm"))]
+        assert!(!enabled);
+        #[cfg(feature = "llm")]
+        assert!(enabled);
     }
 
     #[tokio::test]
