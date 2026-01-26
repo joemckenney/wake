@@ -40,12 +40,42 @@ detect_arch() {
     esac
 }
 
+detect_glibc_version() {
+    # Returns glibc version as a comparable number (e.g., 2.39 -> 239)
+    if command -v ldd >/dev/null 2>&1; then
+        version=$(ldd --version 2>&1 | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+        if [ -n "$version" ]; then
+            major=$(echo "$version" | cut -d. -f1)
+            minor=$(echo "$version" | cut -d. -f2)
+            echo $((major * 100 + minor))
+            return
+        fi
+    fi
+    echo "0"
+}
+
 get_target() {
     os="$1"
     arch="$2"
 
     case "${os}-${arch}" in
-        linux-x86_64)   echo "x86_64-unknown-linux-gnu" ;;
+        linux-x86_64)
+            # Allow override via WAKE_TARGET env var
+            if [ "${WAKE_TARGET:-}" = "musl" ]; then
+                echo "x86_64-unknown-linux-musl"
+            elif [ "${WAKE_TARGET:-}" = "gnu" ]; then
+                echo "x86_64-unknown-linux-gnu"
+            else
+                # Auto-detect: use musl if glibc < 2.39
+                glibc_ver=$(detect_glibc_version)
+                if [ "$glibc_ver" -lt 239 ] && [ "$glibc_ver" -gt 0 ]; then
+                    warn "Detected glibc < 2.39, using static musl build"
+                    echo "x86_64-unknown-linux-musl"
+                else
+                    echo "x86_64-unknown-linux-gnu"
+                fi
+            fi
+            ;;
         darwin-x86_64)  echo "x86_64-apple-darwin" ;;
         darwin-aarch64) echo "aarch64-apple-darwin" ;;
         *)              error "Unsupported platform: ${os}-${arch}" ;;
