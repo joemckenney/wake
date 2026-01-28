@@ -13,7 +13,7 @@ mistralrs = { git = "https://github.com/EricLBuehler/mistral.rs.git", optional =
 tokio.workspace = true
 
 # Download and progress
-reqwest = { version = "0.12", features = ["stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls"] }
 indicatif = "0.17"
 futures-util = "0.3"
 
