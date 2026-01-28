@@ -2,6 +2,7 @@ pub mod annotate;
 pub mod dump;
 pub mod hook;
 pub mod init;
+pub mod llm;
 pub mod log;
 pub mod prune;
 pub mod search;

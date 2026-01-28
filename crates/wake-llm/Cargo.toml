@@ -1,0 +1,34 @@
+[package]
+name = "wake-llm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Local LLM summarization for wake terminal recorder"
+
+[dependencies]
+# LLM inference (from git - not on crates.io)
+mistralrs = { git = "https://github.com/EricLBuehler/mistral.rs.git", optional = true }
+
+# Async runtime
+tokio.workspace = true
+
+# Download and progress
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls"] }
+indicatif = "0.17"
+futures-util = "0.3"
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Utilities
+dirs.workspace = true
+thiserror.workspace = true
+tracing = "0.1"
+
+[features]
+default = []
+# Enable LLM inference (requires mistralrs which has heavy dependencies)
+llm = ["mistralrs"]
+cuda = ["llm", "mistralrs/cuda"]
+metal = ["llm", "mistralrs/metal"]

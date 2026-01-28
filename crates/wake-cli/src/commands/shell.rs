@@ -5,12 +5,20 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixListener;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
-use wake_core::{Config, Database, GitCache, HookMessage, OutputBuffer};
+use wake_core::{Config, Database, GitCache, HookMessage, OutputBuffer, SummarizationConfig};
 
 struct PendingCommand {
     id: i64,
+    command: String,
     started_at: chrono::DateTime<Utc>,
     buffer: OutputBuffer,
+}
+
+/// Info about a completed command to be summarized
+struct SummarizeRequest {
+    command_id: i64,
+    command: String,
+    output: String,
 }
 
 struct SessionState {
@@ -19,6 +27,8 @@ struct SessionState {
     git_cache: GitCache,
     current_command: Option<PendingCommand>,
     max_output_bytes: usize,
+    summarization_config: SummarizationConfig,
+    summarize_tx: Option<mpsc::Sender<SummarizeRequest>>,
 }
 
 pub async fn run() -> Result<()> {
@@ -47,6 +57,16 @@ pub async fn run() -> Result<()> {
     let _ = db.prune_old_sessions(config.retention.days);
 
     let max_output_bytes = config.output.max_bytes();
+    let summarization_config = config.summarization.clone();
+
+    // Set up background summarization if enabled
+    let summarize_tx = if summarization_config.enabled {
+        let (tx, rx) = mpsc::channel::<SummarizeRequest>(100);
+        tokio::spawn(run_summarization_task(rx));
+        Some(tx)
+    } else {
+        None
+    };
 
     db.create_session(&session_id, Some(&shell), project_root.as_deref(), None)
         .context("Failed to create session")?;
@@ -97,6 +117,8 @@ pub async fn run() -> Result<()> {
         git_cache,
         current_command: None,
         max_output_bytes,
+        summarization_config,
+        summarize_tx,
     }));
 
     // Channel for coordinating shutdown
@@ -245,6 +267,7 @@ fn handle_hook_message(state: &Arc<Mutex<SessionState>>, msg: HookMessage) {
             if let Ok(id) = cmd_id {
                 state.current_command = Some(PendingCommand {
                     id,
+                    command: cmd.clone(),
                     started_at: timestamp,
                     buffer: OutputBuffer::with_max_bytes(state.max_output_bytes),
                 });
@@ -261,6 +284,74 @@ fn handle_hook_message(state: &Arc<Mutex<SessionState>>, msg: HookMessage) {
                     &output_result.raw,
                     output_result.truncated,
                 );
+
+                // Queue for summarization if enabled and output is large enough
+                if state.summarization_config.enabled
+                    && output_result.clean.len() >= state.summarization_config.min_bytes_usize()
+                {
+                    if let Some(ref tx) = state.summarize_tx {
+                        let _ = tx.try_send(SummarizeRequest {
+                            command_id: pending.id,
+                            command: pending.command,
+                            output: output_result.clean,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Background task that handles LLM summarization of command outputs
+async fn run_summarization_task(mut rx: mpsc::Receiver<SummarizeRequest>) {
+    use wake_llm::WakeLlm;
+
+    let llm = WakeLlm::new();
+
+    // Check if LLM feature is enabled
+    if !WakeLlm::llm_enabled() {
+        tracing::debug!("LLM summarization feature not enabled, skipping");
+        // Drain the channel without processing
+        while rx.recv().await.is_some() {}
+        return;
+    }
+
+    // Try to ensure model is available (download if needed)
+    if !llm.model_available() {
+        tracing::info!("Summarization model not downloaded, attempting download...");
+        match llm.download_model().await {
+            Ok(_) => tracing::info!("Model downloaded successfully"),
+            Err(e) => {
+                tracing::warn!("Failed to download model: {e}. Summarization disabled.");
+                // Drain the channel without processing
+                while rx.recv().await.is_some() {}
+                return;
+            }
+        }
+    }
+
+    // Open database connection for this task
+    let db = match Database::open() {
+        Ok(db) => db,
+        Err(e) => {
+            tracing::error!("Failed to open database for summarization: {e}");
+            return;
+        }
+    };
+
+    // Process summarization requests
+    while let Some(request) = rx.recv().await {
+        match llm.summarize(&request.command, &request.output).await {
+            Ok(summary) => {
+                if let Err(e) = db.update_command_summary(request.command_id, &summary) {
+                    tracing::warn!(
+                        "Failed to save summary for command {}: {e}",
+                        request.command_id
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::debug!("Failed to summarize command {}: {e}", request.command_id);
             }
         }
     }

@@ -198,3 +198,79 @@ max_mb = 10
     // Should use 7 days from config
     assert!(stdout.contains("7 days"), "Expected config to use 7 days retention");
 }
+
+// Tests for LLM commands (Phase 4)
+
+#[test]
+fn test_llm_help() {
+    let output = wake_cmd().args(["llm", "--help"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("download"));
+    assert!(stdout.contains("status"));
+    assert!(stdout.contains("Manage local LLM") || stdout.contains("summarization"));
+}
+
+#[test]
+fn test_llm_status() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output = wake_cmd().args(["llm", "status"]).env("HOME", temp_dir.path()).output().unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("LLM Summarization Status"));
+    assert!(stdout.contains("Model path:"));
+    assert!(stdout.contains("Status:"));
+}
+
+#[test]
+fn test_llm_status_shows_feature_status() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output = wake_cmd().args(["llm", "status"]).env("HOME", temp_dir.path()).output().unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Feature:"));
+    // Should show either enabled or disabled
+    assert!(stdout.contains("enabled") || stdout.contains("disabled"));
+}
+
+#[test]
+fn test_llm_download_help() {
+    let output = wake_cmd().args(["llm", "download", "--help"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Download") || stdout.contains("download"));
+}
+
+#[test]
+fn test_llm_status_help() {
+    let output = wake_cmd().args(["llm", "status", "--help"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("status") || stdout.contains("Status"));
+}
+
+#[test]
+fn test_summarization_config_is_read() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let home = temp_dir.path();
+
+    // Create config with summarization settings
+    let wake_dir = home.join(".wake");
+    std::fs::create_dir_all(&wake_dir).unwrap();
+    std::fs::write(
+        wake_dir.join("config.toml"),
+        r#"
+[summarization]
+enabled = true
+min_bytes = 2048
+"#,
+    )
+    .unwrap();
+
+    // Run a command - should not crash with summarization config
+    let output = wake_cmd().args(["status"]).env("HOME", home).output().unwrap();
+
+    assert!(output.status.success());
+}
