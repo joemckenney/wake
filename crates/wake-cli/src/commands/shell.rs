@@ -231,8 +231,8 @@ pub async fn run() -> Result<()> {
     std::process::exit(exit_status.exit_code() as i32);
 }
 
-fn handle_hook_message(state: &Arc<Mutex<SessionState>>, msg: HookMessage) {
-    let mut state = match state.lock() {
+fn handle_hook_message(state_arc: &Arc<Mutex<SessionState>>, msg: HookMessage) {
+    let mut state = match state_arc.lock() {
         Ok(s) => s,
         Err(_) => return,
     };
@@ -274,9 +274,19 @@ fn handle_hook_message(state: &Arc<Mutex<SessionState>>, msg: HookMessage) {
             }
         }
         HookMessage::CmdEnd { exit_code, duration_ms, timestamp: _ } => {
-            if let Some(pending) = state.current_command.take() {
+            // Small delay to let PTY reader catch up with fast commands
+            // The shell hook fires synchronously but PTY output is async
+            // We must delay BEFORE taking the pending command so the buffer can still receive data
+            drop(state);
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let mut state2 = match state_arc.lock() {
+                Ok(s) => s,
+                Err(_) => return,
+            };
+
+            if let Some(pending) = state2.current_command.take() {
                 let output_result = pending.buffer.finish();
-                let _ = state.db.finish_command(
+                let _ = state2.db.finish_command(
                     pending.id,
                     exit_code,
                     duration_ms as i64,
@@ -286,10 +296,10 @@ fn handle_hook_message(state: &Arc<Mutex<SessionState>>, msg: HookMessage) {
                 );
 
                 // Queue for summarization if enabled and output is large enough
-                if state.summarization_config.enabled
-                    && output_result.clean.len() >= state.summarization_config.min_bytes_usize()
+                if state2.summarization_config.enabled
+                    && output_result.clean.len() >= state2.summarization_config.min_bytes_usize()
                 {
-                    if let Some(ref tx) = state.summarize_tx {
+                    if let Some(ref tx) = state2.summarize_tx {
                         let _ = tx.try_send(SummarizeRequest {
                             command_id: pending.id,
                             command: pending.command,
@@ -307,14 +317,6 @@ async fn run_summarization_task(mut rx: mpsc::Receiver<SummarizeRequest>) {
     use wake_llm::WakeLlm;
 
     let llm = WakeLlm::new();
-
-    // Check if LLM feature is enabled
-    if !WakeLlm::llm_enabled() {
-        tracing::debug!("LLM summarization feature not enabled, skipping");
-        // Drain the channel without processing
-        while rx.recv().await.is_some() {}
-        return;
-    }
 
     // Try to ensure model is available (download if needed)
     if !llm.model_available() {

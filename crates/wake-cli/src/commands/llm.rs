@@ -12,16 +12,9 @@ pub async fn status() -> Result<()> {
     println!("========================");
     println!();
 
-    // Check if feature is enabled
-    if WakeLlm::llm_enabled() {
-        println!("Feature:    enabled");
-    } else {
-        println!("Feature:    disabled (compile with --features llm)");
-    }
-
-    // Model path
-    let model_path = llm.model_path();
-    println!("Model path: {}", model_path.display());
+    // Model info
+    println!("Model:      Qwen2.5-0.5B-Instruct (Q4_K_M)");
+    println!("Model path: {}", llm.model_path().display());
 
     // Model status
     let status_str = match status {
@@ -33,7 +26,7 @@ pub async fn status() -> Result<()> {
 
     // If downloaded, show file size
     if llm.model_available() {
-        if let Ok(metadata) = std::fs::metadata(model_path) {
+        if let Ok(metadata) = std::fs::metadata(llm.model_path()) {
             let size_mb = metadata.len() as f64 / (1024.0 * 1024.0);
             println!("Size:       {:.1} MB", size_mb);
         }
@@ -54,7 +47,7 @@ pub async fn download() -> Result<()> {
         return Ok(());
     }
 
-    println!("Downloading summarization model...");
+    println!("Downloading summarization model (Qwen2.5-0.5B)...");
     println!("Destination: {}", llm.model_path().display());
     println!();
 
@@ -83,10 +76,10 @@ pub async fn download() -> Result<()> {
     println!();
     println!("Model downloaded successfully.");
     println!();
-    println!("To enable summarization, add to ~/.wake/config.toml:");
+    println!("Summarization is enabled by default. To disable, add to ~/.wake/config.toml:");
     println!();
     println!("[summarization]");
-    println!("enabled = true");
+    println!("enabled = false");
 
     Ok(())
 }

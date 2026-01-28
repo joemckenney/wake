@@ -6,8 +6,8 @@ license.workspace = true
 description = "Local LLM summarization for wake terminal recorder"
 
 [dependencies]
-# LLM inference (from git - not on crates.io)
-mistralrs = { git = "https://github.com/EricLBuehler/mistral.rs.git", optional = true }
+# LLM inference via llama.cpp
+llama-cpp-2 = "0.1"
 
 # Async runtime
 tokio.workspace = true
@@ -28,7 +28,6 @@ tracing = "0.1"
 
 [features]
 default = []
-# Enable LLM inference (requires mistralrs which has heavy dependencies)
-llm = ["mistralrs"]
-cuda = ["llm", "mistralrs/cuda"]
-metal = ["llm", "mistralrs/metal"]
+# GPU acceleration options
+cuda = ["llama-cpp-2/cuda"]
+metal = ["llama-cpp-2/metal"]
