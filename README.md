@@ -94,7 +94,7 @@ days = 21      # Delete sessions older than this (default: 21)
 max_mb = 5     # Max output size per command in MB (default: 5)
 
 [summarization]
-enabled = true   # Enable LLM summarization of command outputs (default: false)
+enabled = false  # Disable LLM summarization (default: true)
 min_bytes = 500  # Minimum output size to trigger summarization (default: 1024)
 ```
 
@@ -107,19 +107,30 @@ export WAKE_MAX_OUTPUT_MB=10
 
 Old sessions are automatically pruned on each `wake shell` start.
 
-### LLM Summarization (Optional)
+### LLM Summarization
 
-Wake can automatically summarize command outputs using a local LLM. Summaries appear in `wake_list_commands` output, helping Claude quickly understand what happened without reading full output.
+Wake automatically summarizes command outputs using a local LLM (Qwen2.5-0.5B). Summaries appear in `wake_list_commands` output, helping Claude quickly understand what happened without reading full output.
 
-**Requirements:**
-- Build with `cargo build --features llm --release`
-- Download the model: `wake llm download` (~2.3GB)
-- GPU recommended (CPU inference is very slow)
+**Enabled by default.** On first run, the model (~468MB) downloads automatically.
+
+- **CPU-friendly** — The small model runs efficiently without a GPU
+- **Privacy** — All inference happens locally, nothing leaves your machine
+- **Manual download** — `wake llm download` to pre-download the model
+- **Disable** — Set `enabled = false` in config if you don't want summarization
 
 **How it works:**
 1. When a command completes with output > `min_bytes`, it's queued for summarization
 2. A background task runs inference on the local model
 3. Summaries are stored in the database and exposed via MCP tools
+
+**GPU acceleration (build from source):**
+
+The default build and pre-built binaries use CPU inference, which is fast enough for the small model. For faster inference on supported hardware, build with GPU features:
+
+```sh
+cargo build --release --features cuda   # NVIDIA (requires CUDA toolkit)
+cargo build --release --features metal  # Apple Silicon
+```
 
 ## How It Works
 
@@ -139,10 +150,10 @@ Wake can automatically summarize command outputs using a local LLM. Summaries ap
 │        │              └───────────────┬────────────────┘            │
 │        │                              │                             │
 │        │                              ▼                             │
-│        │                       ┌─────────────┐                      │
-│        │                       │  SQLite DB  │                      │
-│        │                       │  ~/.wake/   │                      │
-│        │                       └─────────────┘                      │
+│        │                       ┌─────────────┐    ┌──────────────┐  │
+│        │                       │  SQLite DB  │◄───│ LLM Summary  │  │
+│        │                       │  ~/.wake/   │    │ (background) │  │
+│        │                       └─────────────┘    └──────────────┘  │
 └────────┼────────────────────────────────────────────────────────────┘
          │                              ▲
          │ you                          │ reads
@@ -160,7 +171,8 @@ Wake can automatically summarize command outputs using a local LLM. Summaries ap
 | `wake shell` | Spawns a PTY, captures all I/O, listens for hook events        |
 | Shell hooks  | Installed via `wake init`, notify wake when commands start/end |
 | Unix socket  | IPC between shell hooks and the wake process                   |
-| SQLite DB    | Stores sessions, commands, outputs, annotations                |
+| SQLite DB    | Stores sessions, commands, outputs, annotations, summaries     |
+| LLM engine   | Background task that summarizes command outputs locally        |
 | `wake-mcp`   | MCP server that exposes wake data to Claude Code               |
 
 ### Data Flow
@@ -169,7 +181,8 @@ Wake can automatically summarize command outputs using a local LLM. Summaries ap
 2. Shell hooks fire on each command, sending metadata via Unix socket
 3. PTY output is captured and associated with the current command
 4. On command completion, exit code + output are written to SQLite
-5. Claude Code queries `wake-mcp`, which reads from the database
+5. Large outputs are queued for LLM summarization in the background
+6. Claude Code queries `wake-mcp`, which reads from the database
 
 ### Constraints
 
@@ -186,8 +199,9 @@ git clone https://github.com/joemckenney/wake
 cd wake
 cargo build --release
 
-# With LLM summarization support (optional, adds ~2min build time)
-cargo build --release --features llm
+# With GPU acceleration (optional)
+cargo build --release --features cuda   # NVIDIA
+cargo build --release --features metal  # Apple Silicon
 ```
 
 ## License
