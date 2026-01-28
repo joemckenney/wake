@@ -26,7 +26,7 @@ pub const MIN_OUTPUT_BYTES: usize = 100;
 const MAX_OUTPUT_CHARS: usize = 4000;
 
 /// Summarize command output using the model
-pub async fn summarize(
+pub fn summarize(
     model: &Model,
     command: &str,
     output: &str,
@@ -55,7 +55,6 @@ pub async fn summarize(
     // Generate summary
     let summary = model
         .generate(SYSTEM_PROMPT, &user_message)
-        .await
         .map_err(|e| SummarizeError::Inference(e.to_string()))?;
 
     // Clean up the summary

@@ -1,15 +1,14 @@
 //! Local LLM summarization for wake terminal recorder
 //!
-//! This crate provides command output summarization using a local Phi-3 Mini model.
-//! The model is downloaded on first use from HuggingFace.
+//! This crate provides command output summarization using a local Qwen2.5-0.5B model
+//! via llama.cpp. The model is downloaded on first use from HuggingFace.
 //!
 //! # Features
 //!
-//! - `llm` - Enable actual LLM inference (requires mistralrs dependencies)
 //! - `cuda` - Enable CUDA support for GPU acceleration
 //! - `metal` - Enable Metal support for Apple Silicon
 //!
-//! Without the `llm` feature, only model downloading is available.
+//! LLM inference is always available - the small model runs efficiently on CPU.
 
 mod download;
 mod model;
@@ -24,10 +23,10 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::RwLock;
 
-/// Default model to use for summarization
-pub const DEFAULT_MODEL: &str = "Phi-3-mini-4k-instruct-q4.gguf";
-pub const DEFAULT_MODEL_URL: &str = "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf";
-pub const DEFAULT_MODEL_SIZE: u64 = 2_300_000_000; // ~2.3GB
+/// Default model to use for summarization (Qwen2.5-0.5B - small and fast)
+pub const DEFAULT_MODEL: &str = "qwen2.5-0.5b-instruct-q4_k_m.gguf";
+pub const DEFAULT_MODEL_URL: &str = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf";
+pub const DEFAULT_MODEL_SIZE: u64 = 491_000_000; // ~491MB
 
 #[derive(Debug, Error)]
 pub enum LlmError {
@@ -41,8 +40,6 @@ pub enum LlmError {
     Summarize(#[from] summarize::SummarizeError),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("LLM feature not enabled - compile with --features llm")]
-    FeatureNotEnabled,
 }
 
 /// Main interface for LLM operations
@@ -76,6 +73,11 @@ impl WakeLlm {
         &self.model_path
     }
 
+    /// Get the expected model size in bytes
+    pub fn model_size(&self) -> u64 {
+        DEFAULT_MODEL_SIZE
+    }
+
     /// Get the current model status
     pub async fn status(&self) -> ModelStatus {
         if !self.model_available() {
@@ -88,11 +90,6 @@ impl WakeLlm {
         } else {
             ModelStatus::Downloaded
         }
-    }
-
-    /// Check if LLM inference is available (feature enabled)
-    pub fn llm_enabled() -> bool {
-        cfg!(feature = "llm")
     }
 
     /// Ensure the model is downloaded, with progress callback
@@ -120,10 +117,6 @@ impl WakeLlm {
 
     /// Load the model into memory (lazy - called automatically by summarize if needed)
     pub async fn load_model(&self) -> Result<(), LlmError> {
-        if !Self::llm_enabled() {
-            return Err(LlmError::FeatureNotEnabled);
-        }
-
         if !self.model_available() {
             return Err(LlmError::ModelNotAvailable(
                 "Model not downloaded. Call ensure_model() first.".to_string(),
@@ -132,7 +125,13 @@ impl WakeLlm {
 
         let mut model_guard = self.model.write().await;
         if model_guard.is_none() {
-            let loaded = model::Model::load(&self.model_path).await?;
+            let model_path = self.model_path.clone();
+            // Load model in blocking task since llama.cpp is synchronous
+            let loaded = tokio::task::spawn_blocking(move || {
+                model::Model::load(&model_path)
+            })
+            .await
+            .map_err(|e| LlmError::ModelNotAvailable(e.to_string()))??;
             *model_guard = Some(loaded);
         }
         Ok(())
@@ -143,10 +142,6 @@ impl WakeLlm {
     /// If the model is not loaded, it will be loaded first.
     /// If the model is not downloaded, returns an error.
     pub async fn summarize(&self, command: &str, output: &str) -> Result<String, LlmError> {
-        if !Self::llm_enabled() {
-            return Err(LlmError::FeatureNotEnabled);
-        }
-
         // Ensure model is loaded
         self.load_model().await?;
 
@@ -155,7 +150,7 @@ impl WakeLlm {
             .as_ref()
             .ok_or_else(|| LlmError::ModelNotAvailable("Model failed to load".to_string()))?;
 
-        let summary = summarize::summarize(model, command, output).await?;
+        let summary = summarize::summarize(model, command, output)?;
         Ok(summary)
     }
 
@@ -178,16 +173,17 @@ mod tests {
 
     #[test]
     fn test_default_model_constants() {
-        // Verify constants are sensible (clippy allow for const checks)
         #[allow(clippy::const_is_empty)]
         {
             assert!(!DEFAULT_MODEL.is_empty());
         }
         assert!(DEFAULT_MODEL.ends_with(".gguf"));
         assert!(DEFAULT_MODEL_URL.starts_with("https://"));
+        assert!(DEFAULT_MODEL_URL.contains("Qwen"));
         #[allow(clippy::assertions_on_constants)]
         {
-            assert!(DEFAULT_MODEL_SIZE > 1_000_000_000); // > 1GB
+            assert!(DEFAULT_MODEL_SIZE > 100_000_000); // > 100MB
+            assert!(DEFAULT_MODEL_SIZE < 1_000_000_000); // < 1GB (small model!)
         }
     }
 
@@ -207,28 +203,13 @@ mod tests {
     }
 
     #[test]
-    fn test_model_not_available_initially() {
-        // In test environment, model won't be downloaded
+    fn test_model_size() {
         let llm = WakeLlm::new();
-        // This might be true or false depending on whether model was previously downloaded
-        // Just test that the method works
-        let _ = llm.model_available();
-    }
-
-    #[test]
-    fn test_llm_enabled_returns_bool() {
-        // Without llm feature, should return false; with it, true
-        let enabled = WakeLlm::llm_enabled();
-        // In default test config (no llm feature), should be false
-        #[cfg(not(feature = "llm"))]
-        assert!(!enabled);
-        #[cfg(feature = "llm")]
-        assert!(enabled);
+        assert_eq!(llm.model_size(), DEFAULT_MODEL_SIZE);
     }
 
     #[tokio::test]
     async fn test_status_not_downloaded() {
-        // Use a custom path that definitely doesn't exist
         let llm = WakeLlm {
             model_path: PathBuf::from("/nonexistent/path/model.gguf"),
             model_url: DEFAULT_MODEL_URL.to_string(),
@@ -247,7 +228,6 @@ mod tests {
         };
 
         let result = llm.load_model().await;
-        // Should fail because feature not enabled or model not available
         assert!(result.is_err());
     }
 
@@ -266,7 +246,6 @@ mod tests {
     #[tokio::test]
     async fn test_unload_model() {
         let llm = WakeLlm::new();
-        // Should not panic even if model not loaded
         llm.unload_model().await;
     }
 
@@ -274,9 +253,6 @@ mod tests {
     fn test_llm_error_display() {
         let err = LlmError::ModelNotAvailable("test".to_string());
         assert!(err.to_string().contains("test"));
-
-        let err = LlmError::FeatureNotEnabled;
-        assert!(err.to_string().contains("feature"));
     }
 
     #[test]
