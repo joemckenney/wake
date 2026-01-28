@@ -127,11 +127,9 @@ impl WakeLlm {
         if model_guard.is_none() {
             let model_path = self.model_path.clone();
             // Load model in blocking task since llama.cpp is synchronous
-            let loaded = tokio::task::spawn_blocking(move || {
-                model::Model::load(&model_path)
-            })
-            .await
-            .map_err(|e| LlmError::ModelNotAvailable(e.to_string()))??;
+            let loaded = tokio::task::spawn_blocking(move || model::Model::load(&model_path))
+                .await
+                .map_err(|e| LlmError::ModelNotAvailable(e.to_string()))??;
             *model_guard = Some(loaded);
         }
         Ok(())

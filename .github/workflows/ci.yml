@@ -16,6 +16,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -36,7 +39,6 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
-        # Note: --all-features excluded because 'llm' feature has platform-specific deps
 
       - name: Run tests
         run: cargo test --all
@@ -58,9 +60,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install musl tools
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake
+          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-musl" ]; then
+            sudo apt-get install -y musl-tools musl-dev
+          fi
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
