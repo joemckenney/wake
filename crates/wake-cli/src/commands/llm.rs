@@ -76,10 +76,10 @@ pub async fn download() -> Result<()> {
     println!();
     println!("Model downloaded successfully.");
     println!();
-    println!("To enable summarization, add to ~/.wake/config.toml:");
+    println!("Summarization is enabled by default. To disable, add to ~/.wake/config.toml:");
     println!();
     println!("[summarization]");
-    println!("enabled = true");
+    println!("enabled = false");
 
     Ok(())
 }

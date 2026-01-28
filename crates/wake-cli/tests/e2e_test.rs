@@ -37,8 +37,8 @@ false
 echo goodbye
 "{wake}" __hook cmd-end --exit-code 0 --duration 1
 
-# Small delay to ensure hooks are processed
-sleep 0.1
+# Delay to ensure hooks are processed (100ms per command for PTY sync)
+sleep 0.5
 exit 0
 "#
         ),

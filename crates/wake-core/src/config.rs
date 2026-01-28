@@ -65,8 +65,9 @@ impl OutputConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SummarizationConfig {
-    /// Enable LLM summarization of command outputs (default: false)
-    #[serde(default)]
+    /// Enable LLM summarization of command outputs (default: true)
+    /// Set to false to disable summarization
+    #[serde(default = "default_enabled")]
     pub enabled: bool,
     /// Minimum output size in bytes to trigger summarization (default: 1024)
     #[serde(default = "default_min_bytes")]
@@ -75,8 +76,12 @@ pub struct SummarizationConfig {
 
 impl Default for SummarizationConfig {
     fn default() -> Self {
-        Self { enabled: false, min_bytes: default_min_bytes() }
+        Self { enabled: default_enabled(), min_bytes: default_min_bytes() }
     }
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 fn default_min_bytes() -> u32 {
@@ -234,7 +239,7 @@ min_bytes = 2048
     #[test]
     fn test_default_summarization() {
         let config = Config::default();
-        assert!(!config.summarization.enabled);
+        assert!(config.summarization.enabled); // enabled by default
         assert_eq!(config.summarization.min_bytes, 1024);
         assert_eq!(config.summarization.min_bytes_usize(), 1024);
     }
@@ -252,8 +257,18 @@ min_bytes = 512
     }
 
     #[test]
-    fn test_summarization_disabled_by_default() {
+    fn test_summarization_enabled_by_default() {
         let toml_str = "";
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert!(config.summarization.enabled);
+    }
+
+    #[test]
+    fn test_summarization_can_be_disabled() {
+        let toml_str = r#"
+[summarization]
+enabled = false
+"#;
         let config: Config = toml::from_str(toml_str).unwrap();
         assert!(!config.summarization.enabled);
     }
