@@ -62,8 +62,8 @@ wake prune              # Delete old sessions
 wake prune --dry-run    # Preview what would be deleted
 wake prune --force      # Skip confirmation
 wake prune --older-than 7  # Override retention period (days)
-wake llm status         # Check LLM summarization status
-wake llm download       # Download summarization model
+wake llm status         # Check model status (downloaded/loaded)
+wake llm download       # Pre-download model (optional, auto-downloads on first use)
 ```
 
 ### MCP Tools
