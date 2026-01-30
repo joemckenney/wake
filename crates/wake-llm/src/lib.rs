@@ -1,6 +1,6 @@
 //! Local LLM summarization for wake terminal recorder
 //!
-//! This crate provides command output summarization using a local Qwen2.5-0.5B model
+//! This crate provides command output summarization using a local Qwen3-0.6B model
 //! via llama.cpp. The model is downloaded on first use from HuggingFace.
 //!
 //! # Features
@@ -23,10 +23,11 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::RwLock;
 
-/// Default model to use for summarization (Qwen2.5-0.5B - small and fast)
-pub const DEFAULT_MODEL: &str = "qwen2.5-0.5b-instruct-q4_k_m.gguf";
-pub const DEFAULT_MODEL_URL: &str = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf";
-pub const DEFAULT_MODEL_SIZE: u64 = 491_000_000; // ~491MB
+/// Default model to use for summarization (Qwen3-0.6B - small and fast)
+pub const DEFAULT_MODEL: &str = "Qwen3-0.6B-Q4_K_M.gguf";
+pub const DEFAULT_MODEL_URL: &str =
+    "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf";
+pub const DEFAULT_MODEL_SIZE: u64 = 397_000_000; // ~397MB
 
 #[derive(Debug, Error)]
 pub enum LlmError {
@@ -177,7 +178,7 @@ mod tests {
         }
         assert!(DEFAULT_MODEL.ends_with(".gguf"));
         assert!(DEFAULT_MODEL_URL.starts_with("https://"));
-        assert!(DEFAULT_MODEL_URL.contains("Qwen"));
+        assert!(DEFAULT_MODEL_URL.contains("Qwen3"));
         #[allow(clippy::assertions_on_constants)]
         {
             assert!(DEFAULT_MODEL_SIZE > 100_000_000); // > 100MB
