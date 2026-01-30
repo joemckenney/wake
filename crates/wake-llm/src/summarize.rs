@@ -127,14 +127,8 @@ mod tests {
 
     #[test]
     fn test_strip_think_blocks() {
-        assert_eq!(
-            strip_think_blocks("<think>reasoning here</think>The answer"),
-            "The answer"
-        );
-        assert_eq!(
-            strip_think_blocks("Before <think>reasoning</think> after"),
-            "Before  after"
-        );
+        assert_eq!(strip_think_blocks("<think>reasoning here</think>The answer"), "The answer");
+        assert_eq!(strip_think_blocks("Before <think>reasoning</think> after"), "Before  after");
         assert_eq!(strip_think_blocks("No think blocks here"), "No think blocks here");
         // Unclosed think tag
         assert_eq!(strip_think_blocks("Start <think>incomplete"), "Start ");

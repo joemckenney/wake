@@ -25,7 +25,8 @@ use tokio::sync::RwLock;
 
 /// Default model to use for summarization (Qwen3-0.6B - small and fast)
 pub const DEFAULT_MODEL: &str = "Qwen3-0.6B-Q4_K_M.gguf";
-pub const DEFAULT_MODEL_URL: &str = "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf";
+pub const DEFAULT_MODEL_URL: &str =
+    "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf";
 pub const DEFAULT_MODEL_SIZE: u64 = 397_000_000; // ~397MB
 
 #[derive(Debug, Error)]
