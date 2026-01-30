@@ -231,7 +231,7 @@ fn test_llm_status_shows_model_info() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Model:"));
-    assert!(stdout.contains("Qwen2.5"));
+    assert!(stdout.contains("Qwen3"));
     assert!(stdout.contains("Status:"));
 }
 

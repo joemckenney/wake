@@ -12,12 +12,7 @@ pub enum SummarizeError {
 }
 
 /// System prompt for summarization
-const SYSTEM_PROMPT: &str = r#"You are a terminal output summarizer. Given a command and its output, provide a brief, informative summary in 1-2 sentences. Focus on:
-- What happened (success/failure)
-- Key results or changes
-- Any errors or warnings
-
-Be concise and technical. Do not include the command itself in the summary."#;
+const SYSTEM_PROMPT: &str = "Summarize this terminal output in 1-2 sentences.";
 
 /// Minimum output length (bytes) worth summarizing
 pub const MIN_OUTPUT_BYTES: usize = 100;
@@ -46,7 +41,8 @@ pub fn summarize(model: &Model, command: &str, output: &str) -> Result<String, S
     };
 
     // Build the user message
-    let user_message = format!("Command: {}\n\nOutput:\n```\n{}\n```", command, truncated_output);
+    // Note: /no_think disables Qwen3's reasoning mode for faster, more concise output
+    let user_message = format!("$ {}\n{}\n/no_think", command, truncated_output);
 
     // Generate summary
     let summary = model
@@ -61,11 +57,14 @@ pub fn summarize(model: &Model, command: &str, output: &str) -> Result<String, S
 
 /// Clean up the generated summary
 fn clean_summary(summary: &str) -> String {
+    // Strip any <think>...</think> blocks (Qwen3 reasoning mode)
+    let summary = strip_think_blocks(summary);
+
     summary
         .trim()
         // Remove any leading "Summary:" or similar
         .strip_prefix("Summary:")
-        .unwrap_or(summary)
+        .unwrap_or(&summary)
         .trim()
         // Limit to reasonable length
         .chars()
@@ -73,6 +72,22 @@ fn clean_summary(summary: &str) -> String {
         .collect::<String>()
         .trim()
         .to_string()
+}
+
+/// Strip <think>...</think> blocks from Qwen3 output
+fn strip_think_blocks(text: &str) -> String {
+    let mut result = text.to_string();
+    while let Some(start) = result.find("<think>") {
+        if let Some(end) = result.find("</think>") {
+            // Remove the think block including tags
+            result = format!("{}{}", &result[..start], &result[end + 8..]);
+        } else {
+            // Unclosed think tag - remove from <think> to end
+            result = result[..start].to_string();
+            break;
+        }
+    }
+    result
 }
 
 #[cfg(test)]
@@ -111,6 +126,29 @@ mod tests {
     }
 
     #[test]
+    fn test_strip_think_blocks() {
+        assert_eq!(
+            strip_think_blocks("<think>reasoning here</think>The answer"),
+            "The answer"
+        );
+        assert_eq!(
+            strip_think_blocks("Before <think>reasoning</think> after"),
+            "Before  after"
+        );
+        assert_eq!(strip_think_blocks("No think blocks here"), "No think blocks here");
+        // Unclosed think tag
+        assert_eq!(strip_think_blocks("Start <think>incomplete"), "Start ");
+    }
+
+    #[test]
+    fn test_clean_summary_strips_think_blocks() {
+        assert_eq!(
+            clean_summary("<think>Let me analyze this...</think>Build succeeded with 5 warnings."),
+            "Build succeeded with 5 warnings."
+        );
+    }
+
+    #[test]
     fn test_min_output_bytes_constant() {
         assert_eq!(MIN_OUTPUT_BYTES, 100);
     }
@@ -126,6 +164,6 @@ mod tests {
         {
             assert!(!SYSTEM_PROMPT.is_empty());
         }
-        assert!(SYSTEM_PROMPT.contains("summarizer"));
+        assert!(SYSTEM_PROMPT.contains("Summarize"));
     }
 }

@@ -13,7 +13,7 @@ pub async fn status() -> Result<()> {
     println!();
 
     // Model info
-    println!("Model:      Qwen2.5-0.5B-Instruct (Q4_K_M)");
+    println!("Model:      Qwen3-0.6B (Q4_K_M)");
     println!("Model path: {}", llm.model_path().display());
 
     // Model status
@@ -47,7 +47,7 @@ pub async fn download() -> Result<()> {
         return Ok(());
     }
 
-    println!("Downloading summarization model (Qwen2.5-0.5B)...");
+    println!("Downloading summarization model (Qwen3-0.6B)...");
     println!("Destination: {}", llm.model_path().display());
     println!();
 
