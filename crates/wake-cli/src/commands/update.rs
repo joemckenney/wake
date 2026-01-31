@@ -9,11 +9,10 @@ use serde::Deserialize;
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tar::Archive;
 
-const GITHUB_RELEASES_URL: &str =
-    "https://api.github.com/repos/joemckenney/wake/releases/latest";
+const GITHUB_RELEASES_URL: &str = "https://api.github.com/repos/joemckenney/wake/releases/latest";
 
 #[derive(Debug, Deserialize)]
 struct GithubRelease {
@@ -57,11 +56,7 @@ fn is_newer_version(current: &str, new: &str) -> bool {
     let current = parse_version(current);
     let new = parse_version(new);
 
-    let parse = |v: &str| -> Vec<u32> {
-        v.split('.')
-            .filter_map(|s| s.parse().ok())
-            .collect()
-    };
+    let parse = |v: &str| -> Vec<u32> { v.split('.').filter_map(|s| s.parse().ok()).collect() };
 
     let current_parts = parse(current);
     let new_parts = parse(new);
@@ -97,25 +92,19 @@ async fn fetch_latest_release(client: &Client) -> Result<GithubRelease> {
         );
     }
 
-    response
-        .json()
-        .await
-        .context("Failed to parse release JSON")
+    response.json().await.context("Failed to parse release JSON")
 }
 
 /// Find the asset matching our platform
 fn find_platform_asset<'a>(release: &'a GithubRelease, target: &str) -> Option<&'a GithubAsset> {
-    release
-        .assets
-        .iter()
-        .find(|a| a.name.contains(target) && a.name.ends_with(".tar.gz"))
+    release.assets.iter().find(|a| a.name.contains(target) && a.name.ends_with(".tar.gz"))
 }
 
 /// Download and extract the update
 async fn download_and_extract(
     client: &Client,
     asset: &GithubAsset,
-    dest_dir: &PathBuf,
+    dest_dir: &Path,
 ) -> Result<PathBuf> {
     let response = client
         .get(&asset.browser_download_url)
@@ -221,9 +210,7 @@ pub async fn check() -> Result<()> {
     println!("Current version: {}", current_version);
     println!("Checking for updates...");
 
-    let client = Client::builder()
-        .user_agent("wake-cli")
-        .build()?;
+    let client = Client::builder().user_agent("wake-cli").build()?;
 
     let release = fetch_latest_release(&client).await?;
     let latest_version = parse_version(&release.tag_name);
@@ -245,9 +232,7 @@ pub async fn run() -> Result<()> {
     println!("Current version: {}", current_version);
     println!("Checking for updates...");
 
-    let client = Client::builder()
-        .user_agent("wake-cli")
-        .build()?;
+    let client = Client::builder().user_agent("wake-cli").build()?;
 
     let release = fetch_latest_release(&client).await?;
     let latest_version = parse_version(&release.tag_name);

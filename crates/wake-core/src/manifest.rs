@@ -65,9 +65,7 @@ impl ModelManifest {
 
     /// Get the models directory path
     pub fn models_dir() -> Result<PathBuf, ManifestError> {
-        dirs::home_dir()
-            .map(|h| h.join(".wake").join("models"))
-            .ok_or(ManifestError::NoHomeDir)
+        dirs::home_dir().map(|h| h.join(".wake").join("models")).ok_or(ManifestError::NoHomeDir)
     }
 
     /// Add or update a model entry

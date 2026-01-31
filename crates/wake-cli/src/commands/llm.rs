@@ -180,12 +180,7 @@ pub async fn clean(dry_run: bool, force: bool) -> Result<()> {
 
     for model in &cleanable {
         let size_mb = model.size as f64 / (1024.0 * 1024.0);
-        println!(
-            "  {} ({:.1} MB) - {}",
-            model.filename,
-            size_mb,
-            model.reason_str()
-        );
+        println!("  {} ({:.1} MB) - {}", model.filename, size_mb, model.reason_str());
     }
 
     println!();
