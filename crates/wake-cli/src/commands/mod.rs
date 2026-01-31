@@ -8,3 +8,4 @@ pub mod prune;
 pub mod search;
 pub mod shell;
 pub mod status;
+pub mod update;

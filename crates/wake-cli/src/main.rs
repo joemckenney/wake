@@ -65,6 +65,12 @@ enum Commands {
         #[arg(long, value_name = "DAYS")]
         older_than: Option<u32>,
     },
+    /// Update wake to the latest version
+    Update {
+        /// Only check for updates, don't install
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -73,6 +79,15 @@ enum LlmAction {
     Download,
     /// Show model status and path
     Status,
+    /// Clean orphaned models from previous versions
+    Clean {
+        /// Preview what would be deleted without deleting
+        #[arg(long)]
+        dry_run: bool,
+        /// Skip confirmation prompt
+        #[arg(short, long)]
+        force: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -106,6 +121,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Llm { action } => match action {
             LlmAction::Download => commands::llm::download().await,
             LlmAction::Status => commands::llm::status().await,
+            LlmAction::Clean { dry_run, force } => commands::llm::clean(dry_run, force).await,
         },
         Commands::Hook { event } => match event {
             HookEvent::CmdStart { cmd } => commands::hook::cmd_start(&cmd).await,
@@ -120,6 +136,13 @@ async fn main() -> anyhow::Result<()> {
                 older_than_days: older_than,
             })
             .await
+        }
+        Commands::Update { check } => {
+            if check {
+                commands::update::check().await
+            } else {
+                commands::update::run().await
+            }
         }
     }
 }

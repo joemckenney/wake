@@ -22,9 +22,12 @@ serde.workspace = true
 serde_json.workspace = true
 
 # Utilities
+wake-core.workspace = true
 dirs.workspace = true
 thiserror.workspace = true
 tracing = "0.1"
+sha2 = "0.10"
+chrono.workspace = true
 
 [features]
 default = []

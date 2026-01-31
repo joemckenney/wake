@@ -18,10 +18,13 @@ pub use download::DownloadProgress;
 pub use model::ModelStatus;
 pub use summarize::SummarizeError;
 
-use std::path::PathBuf;
+use sha2::{Digest, Sha256};
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::RwLock;
+use wake_core::{ModelEntry, ModelManifest};
 
 /// Default model to use for summarization (Qwen3-0.6B - small and fast)
 pub const DEFAULT_MODEL: &str = "Qwen3-0.6B-Q4_K_M.gguf";
@@ -41,6 +44,23 @@ pub enum LlmError {
     Summarize(#[from] summarize::SummarizeError),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("Manifest error: {0}")]
+    Manifest(#[from] wake_core::ManifestError),
+}
+
+/// Compute SHA256 hash of a file
+pub fn compute_sha256(path: &Path) -> std::io::Result<String> {
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 8192];
+    loop {
+        let bytes_read = file.read(&mut buffer)?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 /// Main interface for LLM operations
@@ -108,6 +128,31 @@ impl WakeLlm {
         }
 
         download::download_model(&self.model_url, &self.model_path, progress_callback).await?;
+
+        // Record in manifest
+        self.record_in_manifest()?;
+
+        Ok(())
+    }
+
+    /// Record the current model in the manifest
+    fn record_in_manifest(&self) -> Result<(), LlmError> {
+        let mut manifest = ModelManifest::load()?;
+
+        let sha256 = compute_sha256(&self.model_path)?;
+        let downloaded_at = chrono::Utc::now().to_rfc3339();
+
+        let entry = ModelEntry {
+            filename: DEFAULT_MODEL.to_string(),
+            wake_version: env!("CARGO_PKG_VERSION").to_string(),
+            sha256,
+            downloaded_at,
+            url: self.model_url.clone(),
+        };
+
+        manifest.add_model(entry);
+        manifest.save()?;
+
         Ok(())
     }
 
