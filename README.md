@@ -111,7 +111,7 @@ Old sessions are automatically pruned on each `wake shell` start.
 
 Wake automatically summarizes command outputs using a local LLM (Qwen3-0.6B). Summaries appear in `wake_list_commands` output, helping Claude quickly understand what happened without reading full output.
 
-**Enabled by default.** On first run, the model (~468MB) downloads automatically.
+**Enabled by default.** On first run, the model (~380MB) downloads automatically.
 
 - **CPU-friendly** — The small model runs efficiently without a GPU
 - **Privacy** — All inference happens locally, nothing leaves your machine
