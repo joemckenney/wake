@@ -18,10 +18,7 @@ Terminal session recorder for AI-assisted development.
 
 ## Adding a CLI Command
 
-1. Create `crates/wake-cli/src/commands/<name>.rs`
-2. Add `pub mod <name>;` to `commands/mod.rs`
-3. Add variant to `Commands` enum in `main.rs`
-4. Add match arm in `main()` to call the command
+Use `/add-cli-command` for guided implementation.
 
 ## Conventions
 

@@ -54,6 +54,7 @@ $ kubectl describe pod api-server-7f8b9
 
 ```sh
 wake shell              # Start recorded session
+wake status             # Current session info
 wake log                # Recent commands
 wake search "error"     # Search history
 wake dump               # Export session as markdown
@@ -62,8 +63,12 @@ wake prune              # Delete old sessions
 wake prune --dry-run    # Preview what would be deleted
 wake prune --force      # Skip confirmation
 wake prune --older-than 7  # Override retention period (days)
+wake update             # Update to latest version
+wake update --check     # Check for updates without installing
 wake llm status         # Check model status (downloaded/loaded)
 wake llm download       # Pre-download model (optional, auto-downloads on first use)
+wake llm clean          # Remove orphaned models from previous versions
+wake llm clean --dry-run   # Preview what would be deleted
 ```
 
 ### MCP Tools
