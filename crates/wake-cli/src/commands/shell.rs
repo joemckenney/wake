@@ -1,11 +1,54 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixListener;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use wake_core::{Config, Database, GitCache, HookMessage, OutputBuffer, SummarizationConfig};
+
+/// Get the user's shell, trying multiple sources:
+/// 1. SHELL environment variable
+/// 2. /etc/passwd entry for current user
+/// 3. Fall back to /bin/sh
+fn get_user_shell() -> String {
+    // Try SHELL env var first
+    if let Ok(shell) = std::env::var("SHELL") {
+        return shell;
+    }
+
+    // Try to read from /etc/passwd
+    if let Some(shell) = get_shell_from_passwd() {
+        return shell;
+    }
+
+    // Final fallback
+    "/bin/sh".to_string()
+}
+
+/// Read the current user's shell from /etc/passwd
+fn get_shell_from_passwd() -> Option<String> {
+    let uid = unsafe { libc::getuid() };
+    let file = std::fs::File::open("/etc/passwd").ok()?;
+    let reader = BufReader::new(file);
+
+    for line in reader.lines().map_while(Result::ok) {
+        // Format: username:password:uid:gid:gecos:home:shell
+        let fields: Vec<&str> = line.split(':').collect();
+        if fields.len() >= 7 {
+            if let Ok(entry_uid) = fields[2].parse::<u32>() {
+                if entry_uid == uid {
+                    let shell = fields[6].trim();
+                    if !shell.is_empty() {
+                        return Some(shell.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
 
 struct PendingCommand {
     id: i64,
@@ -38,8 +81,8 @@ pub async fn run() -> Result<()> {
     // Clean up any stale socket
     let _ = std::fs::remove_file(&socket_path);
 
-    // Get user's shell
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+    // Get user's shell (env var -> /etc/passwd -> /bin/sh fallback)
+    let shell = get_user_shell();
 
     // Detect project root
     let cwd = std::env::current_dir().ok();
@@ -394,6 +437,67 @@ impl Drop for RawModeGuard {
             unsafe {
                 libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, original);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_shell_from_passwd_returns_valid_shell() {
+        // This test runs as the current user, so it should find a shell
+        let shell = get_shell_from_passwd();
+        assert!(shell.is_some(), "Should find current user's shell in /etc/passwd");
+        let shell = shell.unwrap();
+        assert!(shell.starts_with('/'), "Shell should be an absolute path");
+        assert!(
+            shell.contains("sh") || shell.contains("zsh") || shell.contains("fish"),
+            "Shell should be a known shell type: {}",
+            shell
+        );
+    }
+
+    #[test]
+    fn test_get_user_shell_returns_shell() {
+        let shell = get_user_shell();
+        assert!(shell.starts_with('/'), "Shell should be an absolute path");
+        assert!(!shell.is_empty(), "Shell should not be empty");
+    }
+
+    #[test]
+    fn test_get_user_shell_prefers_env_var() {
+        // Save original
+        let original = std::env::var("SHELL").ok();
+
+        // Set a custom SHELL
+        std::env::set_var("SHELL", "/bin/custom-shell");
+        let shell = get_user_shell();
+        assert_eq!(shell, "/bin/custom-shell");
+
+        // Restore original
+        match original {
+            Some(val) => std::env::set_var("SHELL", val),
+            None => std::env::remove_var("SHELL"),
+        }
+    }
+
+    #[test]
+    fn test_get_user_shell_falls_back_to_passwd() {
+        // Save original
+        let original = std::env::var("SHELL").ok();
+
+        // Remove SHELL env var
+        std::env::remove_var("SHELL");
+
+        let shell = get_user_shell();
+        // Should get shell from passwd, not /bin/sh (unless that's actually the user's shell)
+        assert!(shell.starts_with('/'), "Shell should be an absolute path");
+
+        // Restore original
+        if let Some(val) = original {
+            std::env::set_var("SHELL", val);
         }
     }
 }
