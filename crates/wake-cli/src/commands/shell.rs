@@ -33,7 +33,15 @@ struct SessionState {
 
 pub async fn run() -> Result<()> {
     let session_id = uuid::Uuid::new_v4().to_string();
-    let socket_path = format!("/tmp/wake-{session_id}.sock");
+
+    // Use ~/.wake/sockets/ instead of /tmp/ to avoid world-writable directory risks
+    let socket_dir = dirs::home_dir()
+        .context("Could not determine home directory")?
+        .join(".wake")
+        .join("sockets");
+    std::fs::create_dir_all(&socket_dir).context("Failed to create socket directory")?;
+    let socket_path = socket_dir.join(format!("wake-{session_id}.sock"));
+    let socket_path = socket_path.to_string_lossy().to_string();
 
     // Clean up any stale socket
     let _ = std::fs::remove_file(&socket_path);

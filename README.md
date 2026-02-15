@@ -145,7 +145,7 @@ cargo build --release --features metal  # Apple Silicon
 │                                                                     │
 │  ┌───────────┐       ┌─────────────┐      ┌──────────────────────┐  │
 │  │   Your    │  pty  │    Shell    │ hook │    Unix Socket       │  │
-│  │  Terminal │◄─────►│  (zsh/bash) │─────►│  /tmp/wake-*.sock    │  │
+│  │  Terminal │◄─────►│  (zsh/bash) │─────►│  ~/.wake/sockets/*   │  │
 │  └───────────┘       └─────────────┘      └──────────┬───────────┘  │
 │        │                   │                         │              │
 │        │                   │ stdout                  │ cmd events   │
