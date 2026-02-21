@@ -24,6 +24,7 @@ chrono.workspace = true
 signal-hook.workspace = true
 signal-hook-tokio.workspace = true
 anyhow.workspace = true
+dirs.workspace = true
 term_size.workspace = true
 libc.workspace = true
 
