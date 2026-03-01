@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! Local LLM summarization for wake terminal recorder
 //!
 //! This crate provides command output summarization using a local Qwen3-0.6B model
