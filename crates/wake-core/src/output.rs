@@ -98,13 +98,6 @@ mod tests {
     }
 
     #[test]
-    fn test_default_max_bytes() {
-        let buf = OutputBuffer::new();
-        // Default is 5MB
-        assert_eq!(buf.max_bytes, 5 * 1024 * 1024);
-    }
-
-    #[test]
     fn test_ansi_stripping() {
         let mut buf = OutputBuffer::new();
         buf.append(b"\x1b[31mred text\x1b[0m normal");

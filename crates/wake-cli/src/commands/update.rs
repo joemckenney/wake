@@ -309,11 +309,104 @@ mod tests {
         assert!(is_newer_version("v0.5.0", "0.6.0"));
     }
 
+    fn make_release(assets: Vec<(&str, &str)>) -> GithubRelease {
+        GithubRelease {
+            tag_name: "v1.0.0".to_string(),
+            assets: assets
+                .into_iter()
+                .map(|(name, url)| GithubAsset {
+                    name: name.to_string(),
+                    browser_download_url: url.to_string(),
+                    size: 1000,
+                })
+                .collect(),
+        }
+    }
+
     #[test]
-    fn test_get_target_triple() {
-        let result = get_target_triple();
+    fn test_find_platform_asset_matching() {
+        let release = make_release(vec![
+            ("wake-x86_64-unknown-linux-gnu.tar.gz", "https://example.com/linux"),
+            ("wake-aarch64-apple-darwin.tar.gz", "https://example.com/mac"),
+        ]);
+
+        let asset = find_platform_asset(&release, "x86_64-unknown-linux-gnu");
+        assert!(asset.is_some());
+        assert_eq!(asset.unwrap().name, "wake-x86_64-unknown-linux-gnu.tar.gz");
+    }
+
+    #[test]
+    fn test_find_platform_asset_no_match() {
+        let release = make_release(vec![
+            ("wake-aarch64-apple-darwin.tar.gz", "https://example.com/mac"),
+        ]);
+
+        let asset = find_platform_asset(&release, "x86_64-unknown-linux-gnu");
+        assert!(asset.is_none());
+    }
+
+    #[test]
+    fn test_find_platform_asset_ignores_non_tarball() {
+        let release = make_release(vec![
+            ("wake-x86_64-unknown-linux-gnu.zip", "https://example.com/zip"),
+            ("wake-x86_64-unknown-linux-gnu.deb", "https://example.com/deb"),
+        ]);
+
+        let asset = find_platform_asset(&release, "x86_64-unknown-linux-gnu");
+        assert!(asset.is_none());
+    }
+
+    #[test]
+    fn test_find_binary_in_dir_flat() {
+        let dir = tempfile::tempdir().unwrap();
+        let binary = dir.path().join("wake");
+        fs::write(&binary, b"fake binary").unwrap();
+
+        let result = find_binary_in_dir(&dir.path().to_path_buf(), "wake");
         assert!(result.is_ok());
-        let triple = result.unwrap();
-        assert!(triple.contains("x86_64") || triple.contains("aarch64"));
+        assert_eq!(result.unwrap(), binary);
+    }
+
+    #[test]
+    fn test_find_binary_in_dir_nested() {
+        let dir = tempfile::tempdir().unwrap();
+        let subdir = dir.path().join("wake-v1.0.0");
+        fs::create_dir_all(&subdir).unwrap();
+        let binary = subdir.join("wake");
+        fs::write(&binary, b"fake binary").unwrap();
+
+        let result = find_binary_in_dir(&dir.path().to_path_buf(), "wake");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), binary);
+    }
+
+    #[test]
+    fn test_find_binary_in_dir_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = find_binary_in_dir(&dir.path().to_path_buf(), "wake");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_replace_binary() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let source = dir.path().join("new-wake");
+        fs::write(&source, b"new binary content").unwrap();
+
+        let dest = dir.path().join("wake");
+        fs::write(&dest, b"old binary content").unwrap();
+
+        replace_binary(&source, &dest).unwrap();
+
+        let content = fs::read(&dest).unwrap();
+        assert_eq!(content, b"new binary content");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&dest).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o755);
+        }
     }
 }

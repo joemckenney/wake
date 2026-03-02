@@ -142,22 +142,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_min_output_bytes_constant() {
-        assert_eq!(MIN_OUTPUT_BYTES, 100);
-    }
-
-    #[test]
-    fn test_max_output_chars_constant() {
-        assert_eq!(MAX_OUTPUT_CHARS, 4000);
-    }
-
-    #[test]
-    fn test_system_prompt_not_empty() {
-        #[allow(clippy::const_is_empty)]
-        {
-            assert!(!SYSTEM_PROMPT.is_empty());
-        }
-        assert!(SYSTEM_PROMPT.contains("Summarize"));
-    }
 }

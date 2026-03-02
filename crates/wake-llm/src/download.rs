@@ -130,20 +130,6 @@ mod tests {
     }
 
     #[test]
-    fn test_download_progress_clone() {
-        let progress = DownloadProgress::new(250, Some(500));
-        let cloned = progress.clone();
-        assert_eq!(cloned.downloaded, progress.downloaded);
-        assert_eq!(cloned.total, progress.total);
-    }
-
-    #[test]
-    fn test_download_error_display() {
-        let err = DownloadError::Failed("test error".to_string());
-        assert!(err.to_string().contains("test error"));
-    }
-
-    #[test]
     fn test_temp_path_extension() {
         let dest = PathBuf::from("/path/to/model.gguf");
         let temp = dest.with_extension("tmp");

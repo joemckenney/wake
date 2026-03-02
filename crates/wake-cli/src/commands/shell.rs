@@ -405,3 +405,130 @@ impl Drop for RawModeGuard {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn test_state() -> Arc<Mutex<SessionState>> {
+        let db = Database::open_in_memory().expect("in-memory db");
+        let session_id = "test-session".to_string();
+        db.create_session(&session_id, Some("zsh"), None, None).unwrap();
+
+        Arc::new(Mutex::new(SessionState {
+            session_id,
+            db,
+            git_cache: GitCache::new(),
+            current_command: None,
+            max_output_bytes: 1024,
+            summarization_config: SummarizationConfig::default(),
+            summarize_tx: None,
+        }))
+    }
+
+    fn cmd_start(cmd: &str) -> HookMessage {
+        HookMessage::CmdStart {
+            cmd: cmd.to_string(),
+            cwd: PathBuf::from("/tmp"),
+            timestamp: Utc::now(),
+        }
+    }
+
+    fn cmd_end(exit_code: i32, duration_ms: u64) -> HookMessage {
+        HookMessage::CmdEnd {
+            exit_code,
+            duration_ms,
+            timestamp: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn test_handle_cmd_start_inserts_command() {
+        let state = test_state();
+        handle_hook_message(&state, cmd_start("ls -la"));
+
+        let s = state.lock().unwrap();
+        assert!(s.current_command.is_some());
+        assert_eq!(s.current_command.as_ref().unwrap().command, "ls -la");
+
+        let count = s.db.count_session_commands(&s.session_id).unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_handle_cmd_end_finalizes_command() {
+        let state = test_state();
+        handle_hook_message(&state, cmd_start("echo hello"));
+        handle_hook_message(&state, cmd_end(0, 50));
+
+        let s = state.lock().unwrap();
+        assert!(s.current_command.is_none());
+
+        let cmds = s.db.get_session_commands(&s.session_id).unwrap();
+        assert_eq!(cmds.len(), 1);
+        assert_eq!(cmds[0].exit_code, Some(0));
+        assert!(cmds[0].ended_at.is_some());
+    }
+
+    #[test]
+    fn test_handle_consecutive_cmd_starts_orphans_first() {
+        let state = test_state();
+        handle_hook_message(&state, cmd_start("first"));
+        handle_hook_message(&state, cmd_start("second"));
+
+        let s = state.lock().unwrap();
+        assert_eq!(s.current_command.as_ref().unwrap().command, "second");
+
+        let cmds = s.db.get_session_commands(&s.session_id).unwrap();
+        assert_eq!(cmds.len(), 2);
+        // First command was orphaned with exit_code = -1
+        assert_eq!(cmds[0].exit_code, Some(-1));
+        assert!(cmds[0].ended_at.is_some());
+        // Second command is still pending (no exit_code yet)
+        assert!(cmds[1].exit_code.is_none());
+    }
+
+    #[test]
+    fn test_handle_cmd_end_without_cmd_start() {
+        let state = test_state();
+        // Should be a no-op, no panic
+        handle_hook_message(&state, cmd_end(0, 100));
+
+        let s = state.lock().unwrap();
+        assert!(s.current_command.is_none());
+        let count = s.db.count_session_commands(&s.session_id).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_session_cleanup_finalizes_pending() {
+        let state = test_state();
+        handle_hook_message(&state, cmd_start("long-running"));
+
+        // Simulate the cleanup logic from run() (lines 219-234)
+        {
+            let mut s = state.lock().unwrap();
+            if let Some(pending) = s.current_command.take() {
+                let output_result = pending.buffer.finish();
+                let duration_ms = (Utc::now() - pending.started_at).num_milliseconds();
+                s.db.finish_command(
+                    pending.id,
+                    130, // SIGINT-like exit
+                    duration_ms,
+                    &output_result.clean,
+                    &output_result.raw,
+                    output_result.truncated,
+                )
+                .unwrap();
+            }
+        }
+
+        let s = state.lock().unwrap();
+        assert!(s.current_command.is_none());
+        let cmds = s.db.get_session_commands(&s.session_id).unwrap();
+        assert_eq!(cmds.len(), 1);
+        assert_eq!(cmds[0].exit_code, Some(130));
+        assert!(cmds[0].ended_at.is_some());
+    }
+}

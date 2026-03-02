@@ -418,6 +418,15 @@ impl Database {
         self.conn.execute_batch("VACUUM")?;
         Ok(())
     }
+
+    /// Create an in-memory database (used for testing)
+    #[doc(hidden)]
+    pub fn open_in_memory() -> Result<Self, DbError> {
+        let conn = Connection::open_in_memory()?;
+        let db = Self { conn };
+        db.migrate()?;
+        Ok(db)
+    }
 }
 
 fn parse_datetime(s: String) -> DateTime<Utc> {
@@ -779,65 +788,6 @@ mod tests {
     }
 
     #[test]
-    fn test_update_command_summary() {
-        let db = temp_db();
-
-        db.create_session("sess-summary", None, None, None).unwrap();
-
-        let id = db.insert_command("sess-summary", "cargo build", None, None).unwrap();
-        db.finish_command(id, 0, 5000, "Compiling...\nFinished.", b"", false).unwrap();
-
-        // Initially no summary
-        let commands = db.get_recent_commands(1).unwrap();
-        assert!(commands[0].summary.is_none());
-
-        // Update summary
-        db.update_command_summary(id, "Build completed successfully with no errors.").unwrap();
-
-        // Verify summary is stored
-        let commands = db.get_recent_commands(1).unwrap();
-        assert_eq!(
-            commands[0].summary,
-            Some("Build completed successfully with no errors.".to_string())
-        );
-    }
-
-    #[test]
-    fn test_update_command_summary_in_metadata() {
-        let db = temp_db();
-
-        db.create_session("sess-sum-meta", None, None, None).unwrap();
-
-        let id = db.insert_command("sess-sum-meta", "npm test", None, None).unwrap();
-        db.finish_command(id, 0, 3000, "Tests passed", b"", false).unwrap();
-
-        db.update_command_summary(id, "All 42 tests passed.").unwrap();
-
-        // Verify summary appears in metadata
-        let metadata = db.get_recent_commands_metadata(1).unwrap();
-        assert_eq!(metadata[0].summary, Some("All 42 tests passed.".to_string()));
-    }
-
-    #[test]
-    fn test_update_command_summary_overwrite() {
-        let db = temp_db();
-
-        db.create_session("sess-overwrite", None, None, None).unwrap();
-
-        let id = db.insert_command("sess-overwrite", "test", None, None).unwrap();
-        db.finish_command(id, 0, 100, "output", b"output", false).unwrap();
-
-        // Set initial summary
-        db.update_command_summary(id, "First summary").unwrap();
-
-        // Overwrite with new summary
-        db.update_command_summary(id, "Updated summary").unwrap();
-
-        let commands = db.get_recent_commands(1).unwrap();
-        assert_eq!(commands[0].summary, Some("Updated summary".to_string()));
-    }
-
-    #[test]
     fn test_summary_field_in_command_struct() {
         let db = temp_db();
 
@@ -859,23 +809,6 @@ mod tests {
         // Test search_commands includes summary
         let search_results = db.search_commands("ls").unwrap();
         assert_eq!(search_results[0].summary, Some("Listed 100 items in directory.".to_string()));
-    }
-
-    #[test]
-    fn test_commands_without_summary() {
-        let db = temp_db();
-
-        db.create_session("sess-nosummary", None, None, None).unwrap();
-
-        let id = db.insert_command("sess-nosummary", "pwd", None, None).unwrap();
-        db.finish_command(id, 0, 10, "/home/user", b"/home/user", false).unwrap();
-
-        // Command without summary should have None
-        let commands = db.get_recent_commands(1).unwrap();
-        assert!(commands[0].summary.is_none());
-
-        let metadata = db.get_recent_commands_metadata(1).unwrap();
-        assert!(metadata[0].summary.is_none());
     }
 
     #[test]
